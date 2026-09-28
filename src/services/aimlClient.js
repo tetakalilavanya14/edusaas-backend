@@ -35,12 +35,26 @@ function clerkToUUID(clerkId) {
 /**
  * Helper to make requests to the unified AIML FastAPI Service
  */
-async function callAIML(endpoint, payload = null, method = "POST", customBaseUrl = null) {
+async function callAIML(
+  endpoint,
+  payload = null,
+  method = "POST",
+  customBaseUrl = null
+) {
+  const controller = new AbortController();
+
+  // Prevent a slow/unavailable AIML service from blocking
+  // the main application request indefinitely.
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, 5000);
+
   const options = {
     method,
     headers: {
       "Content-Type": "application/json",
     },
+    signal: controller.signal,
   };
 
   if (payload && method !== "GET") {
@@ -52,24 +66,43 @@ async function callAIML(endpoint, payload = null, method = "POST", customBaseUrl
     const response = await fetch(`${baseUrl}${endpoint}`, options);
 
     let data;
+
     try {
       data = await response.json();
     } catch (err) {
-      const error = new Error("AI service returned a non-JSON response");
+      const error = new Error(
+        "AI service returned a non-JSON response"
+      );
       error.status = 502;
       throw error;
     }
 
     if (!response.ok) {
-      const error = new Error(data.detail || data.message || "AI service failed");
+      const error = new Error(
+        data.detail ||
+        data.message ||
+        "AI service failed"
+      );
       error.status = response.status;
       throw error;
     }
 
     return data;
   } catch (error) {
-    console.error(`[AIML Client Error] ${endpoint}:`, error.message);
+    if (error.name === "AbortError") {
+      console.error(
+        `[AIML Client Timeout] ${endpoint}: AI service did not respond within 5 seconds`
+      );
+    } else {
+      console.error(
+        `[AIML Client Error] ${endpoint}:`,
+        error.message
+      );
+    }
+
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

@@ -346,6 +346,28 @@ router.post("/initial-quiz/answer", authRequired, async (req, res, next) => {
 });
 
 // Initial coding assessment
+
+// Initial coding assessment information
+router.get("/initial-coding/info", authRequired, async (req, res, next) => {
+  try {
+    if (req.user.role !== "student") {
+      return res.status(403).json({
+        error: "Only students can access coding assessment information.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        question_count: codingAssessmentService.CODING_QUESTION_COUNT,
+        format: "Practical Coding",
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // React -> Node -> codingAssessmentService -> PostgreSQL / Docker
 router.post("/initial-coding/start", authRequired, async (req, res, next) => {
   try {

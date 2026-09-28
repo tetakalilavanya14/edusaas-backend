@@ -9,6 +9,8 @@ const INITIAL_ASSESSMENT_DURATION_MS = INITIAL_ASSESSMENT_DURATION_MINUTES * 60 
 const FINAL_ASSESSMENT_DURATION_MINUTES = Number(process.env.FINAL_ASSESSMENT_DURATION_MINUTES || 30)
 const FINAL_ASSESSMENT_DURATION_MS = FINAL_ASSESSMENT_DURATION_MINUTES * 60 * 1000
 
+const codingAssessmentService = require("./codingAssessmentService");
+
 
 if (
   !Number.isFinite(INITIAL_ASSESSMENT_DURATION_MINUTES) ||
@@ -60,16 +62,22 @@ async function startInitialAssessment(userId) {
         codingSession.status === "Paused")
     ) {
       return {
-        resumed: true,
-        phase: "coding",
-        session_id: existingSession.session_id,
-        coding_session: {
-          status: codingSession.status,
-          remaining_seconds: Number(
-            codingSession.remaining_seconds || 0
-          ),
-        },
-      };
+  resumed: true,
+  phase: "coding",
+  session_id: existingSession.session_id,
+
+  coding_assessment: {
+    question_count: codingAssessmentService.CODING_QUESTION_COUNT,
+    format: "Practical Coding",
+  },
+
+  coding_session: {
+    status: codingSession.status,
+    remaining_seconds: Number(
+      codingSession.remaining_seconds || 0
+    ),
+  },
+};
     }
 
     // Coding is already terminal.
@@ -87,11 +95,16 @@ async function startInitialAssessment(userId) {
 
     // Initial quiz is complete but coding has never been started.
     // Tell frontend to enter coding.
-    return {
-      resumed: false,
-      phase: "coding",
-      session_id: existingSession.session_id,
-    };
+   return {
+  resumed: false,
+  phase: "coding",
+  session_id: existingSession.session_id,
+
+  coding_assessment: {
+    question_count: codingAssessmentService.CODING_QUESTION_COUNT,
+    format: "Practical Coding",
+  },
+};
   }
 
   // Prevent starting a brand-new assessment after full completion
@@ -2830,6 +2843,7 @@ module.exports = {
   submitFinalAssessmentAnswer,
 
   getAssessmentOverview,
+
 
 };
 

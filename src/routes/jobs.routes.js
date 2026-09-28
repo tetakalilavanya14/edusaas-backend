@@ -609,20 +609,9 @@ console.log(
   }))
 );
       // 6. Calculate match for every student
+    const results = [];
 
-
-      const results = [];
-
-console.log(
-  "DOMAIN STUDENTS:",
-  domainStudents.map((s) => ({
-    id: s.id,
-    name: s.name,
-    email: s.email,
-    domain_role_id: s.domain_role_id,
-  }))
-);
-for (const student of domainStudents) {
+const processStudent = async (student) => {
   const matchedSkillNames = [];
   const missingSkillNames = [];
   const partialSkillNames = [];
@@ -635,10 +624,11 @@ for (const student of domainStudents) {
       "NO REQUIRED SKILLS - INCLUDING STUDENT:",
       student.email
     );
-    const applicationData =
-  await getApplicationData(student.id);
 
-    results.push({
+    const applicationData =
+      await getApplicationData(student.id);
+
+    return {
       id: student.id,
       name: student.name,
       email: student.email,
@@ -647,8 +637,6 @@ for (const student of domainStudents) {
       domain_role:
         student.domainRole?.domain_name || job.title,
 
-      // No skills to compare yet.
-      // Final assessment can influence this later.
       skill_match: 0,
       fit_category: "Possible Fit",
 
@@ -656,10 +644,12 @@ for (const student of domainStudents) {
       missing_skills: [],
       partial_skills: [],
 
-      eligible: true,
-    });
+      application_id: applicationData.application_id,
+      application_status: applicationData.application_status,
+      interview: applicationData.interview,
 
-    continue;
+      eligible: true,
+    };
   }
 
   // --------------------------------------------------
@@ -677,7 +667,7 @@ for (const student of domainStudents) {
   // Keep existing behavior:
   // skill-based matching requires completed assessment.
   if (!completedSession) {
-    continue;
+    return null;
   }
 
   console.log("STUDENT SESSION CHECK:", {
@@ -774,58 +764,70 @@ for (const student of domainStudents) {
     fitCategory = "Possible Fit";
   }
 
-const applicationData =
-  await getApplicationData(student.id);
+  const applicationData =
+    await getApplicationData(student.id);
 
-let aiHiringMatch = null;
-try {
-  const aiResp = await aimlClient.predictHiring({
-    experience_years: 0,
-    required_experience_years: Number(job.experience_required || 0),
-    skill_match_score: Math.min(Math.max(skillMatch / 100, 0), 1),
-    experience_match_score: 1.0,
-    domain_match: 1,
-    profile_score: skillMatch,
-  });
-
-  if (aiResp && aiResp.data) {
-    aiHiringMatch = aiResp.data;
-  }
-} catch (aiErr) {
-  console.warn("[AIML Hiring Match] Fallback:", aiErr.message);
-}
-  
-results.push({
-  id: student.id,
-  name: student.name,
-  email: student.email,
-  domain_role_id: student.domain_role_id,
-
-  domain_role:
-    student.domainRole?.domain_name || job.title,
-  skill_match: skillMatch,
-  fit_category: fitCategory,
-  ai_hiring_match: aiHiringMatch,
-  skill_match: skillMatch,
-  fit_category: fitCategory,
-
-  matched_skills: matchedSkillNames,
-  missing_skills: missingSkillNames,
-  partial_skills: partialSkillNames,
-
-  application_id: applicationData.application_id,
-  application_status: applicationData.application_status,
-  interview: applicationData.interview,
-
-  eligible: true,
-});
-
-  console.log("MATCH RESULT:", {
-    student: student.name,
+  return {
+    id: student.id,
+    name: student.name,
     email: student.email,
+    domain_role_id: student.domain_role_id,
+
+    domain_role:
+      student.domainRole?.domain_name || job.title,
+
     skill_match: skillMatch,
     fit_category: fitCategory,
-  });
+
+    // AIML hiring prediction removed from this endpoint
+    // to avoid one remote AIML request per candidate.
+    ai_hiring_match: null,
+
+    matched_skills: matchedSkillNames,
+    missing_skills: missingSkillNames,
+    partial_skills: partialSkillNames,
+
+    application_id: applicationData.application_id,
+    application_status: applicationData.application_status,
+    interview: applicationData.interview,
+
+    eligible: true,
+  };
+};
+
+// --------------------------------------------------
+// Controlled concurrency
+// --------------------------------------------------
+
+const STUDENT_CONCURRENCY = 5;
+
+for (
+  let i = 0;
+  i < domainStudents.length;
+  i += STUDENT_CONCURRENCY
+) {
+  const batch =
+    domainStudents.slice(
+      i,
+      i + STUDENT_CONCURRENCY
+    );
+
+  console.log(
+    `[Eligible Students] Processing batch ${
+      Math.floor(i / STUDENT_CONCURRENCY) + 1
+    } with ${batch.length} students`
+  );
+
+  const batchResults =
+    await Promise.all(
+      batch.map((student) =>
+        processStudent(student)
+      )
+    );
+
+  results.push(
+    ...batchResults.filter(Boolean)
+  );
 }
 
 // ========================================
@@ -933,6 +935,7 @@ const skillsInsights =
         data.qualifiedCandidates,
     })
   );
+
 results.sort(
   (a, b) => b.skill_match - a.skill_match
 );
@@ -952,7 +955,6 @@ return res.json({
   count: results.length,
   skillsInsights,
 });
-
     } catch (err) {
       next(err);
     }

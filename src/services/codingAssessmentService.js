@@ -5,6 +5,8 @@ const skillGapService = require("./skillGapService")
 const aimlClient = require("./aimlClient");
 require('dotenv').config()
 const CODING_QUESTION_COUNT = 3;
+
+const CODING_ASSESSMENT_FORMAT = "Practical Coding";
 const CODING_TEST_CONCURRENCY = Math.max(
   1,
   Number(process.env.CODING_TEST_CONCURRENCY) || 4
@@ -292,27 +294,30 @@ async function startAssessment({ userId, sessionId }) {
   // ---------------------------------------------------------
 
   return {
-    status: "success",
+  assessment: {
+    questionCount: orderedQuestions.length,
+    format: CODING_ASSESSMENT_FORMAT,
+  },
 
-    session: {
-      sessionId: codingSession.session_id,
-      userId: codingSession.user_id,
-      status: codingSession.status,
-      totalScore: Number(
-        codingSession.total_score || 0
-      ),
-      maxScore: Number(
-        codingSession.max_score || 300
-      ),
-      questionsCompleted:
-        codingSession.questions_completed || 0,
-      startedAt: codingSession.started_at,
-      deadlineAt: codingSession.deadline_at,
-      remainingSeconds:
-        codingSession.remaining_seconds,
-    },
+  session: {
+    sessionId: codingSession.session_id,
+    userId: codingSession.user_id,
+    status: codingSession.status,
+    totalScore: Number(
+      codingSession.total_score || 0
+    ),
+    maxScore: Number(
+      codingSession.max_score || 300
+    ),
+    questionsCompleted:
+      codingSession.questions_completed || 0,
+    startedAt: codingSession.started_at,
+    deadlineAt: codingSession.deadline_at,
+    remainingSeconds:
+      codingSession.remaining_seconds,
+  },
 
-    questions: orderedQuestions.map(
+  questions: orderedQuestions.map(
       (question, index) => {
         const lastSubmission = latestSubmissionByQuestion.get(
           question.question_id
@@ -1791,5 +1796,6 @@ module.exports = {
   runStudentCode,
   submitCode,
   completeAssessment,
-  executeTestCases
+  executeTestCases,
+  CODING_QUESTION_COUNT,
 };
