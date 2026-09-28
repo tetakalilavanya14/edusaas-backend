@@ -636,14 +636,9 @@ console.log(
   }))
 );
 
-console.log("DOMAIN STUDENTS COUNT:", domainStudents.length);
+      // 6. Calculate match for every student
+    const results = [];
 
-     const results = [];
-
-// Process a limited number of students concurrently.
-// This prevents the eligible-students API from becoming
-// increasingly slow as the number of students grows.
-const STUDENT_CONCURRENCY = 5;
 
 const processStudent = async (student) => {
   const matchedSkillNames = [];
@@ -683,8 +678,9 @@ const processStudent = async (student) => {
       partial_skills: [],
 
       application_id: applicationData.application_id,
-      application_status:
-        applicationData.application_status,
+
+      application_status: applicationData.application_status,
+
       interview: applicationData.interview,
 
       eligible: true,
@@ -810,9 +806,6 @@ const processStudent = async (student) => {
     fitCategory = "Possible Fit";
   }
 
-
-
-
   return {
   id: student.id,
   name:
@@ -828,20 +821,20 @@ const processStudent = async (student) => {
 
     skill_match: skillMatch,
     fit_category: fitCategory,
+
     ai_hiring_match: null,
 
+
+    // AIML hiring prediction removed from this endpoint
+    // to avoid one remote AIML request per candidate.
+    ai_hiring_match: null,
     matched_skills: matchedSkillNames,
     missing_skills: missingSkillNames,
     partial_skills: partialSkillNames,
 
-    application_id:
-      applicationData.application_id,
-
-    application_status:
-      applicationData.application_status,
-
-    interview:
-      applicationData.interview,
+    application_id: applicationData.application_id,
+    application_status: applicationData.application_status,
+    interview: applicationData.interview,
 
     eligible: true,
   };
@@ -850,6 +843,10 @@ const processStudent = async (student) => {
 // --------------------------------------------------
 // Controlled concurrency
 // --------------------------------------------------
+
+
+const STUDENT_CONCURRENCY = 5;
+
 
 for (
   let i = 0;
@@ -985,6 +982,7 @@ const skillsInsights =
         data.qualifiedCandidates,
     })
   );
+
 results.sort(
   (a, b) => b.skill_match - a.skill_match
 );
@@ -1004,7 +1002,6 @@ return res.json({
   count: results.length,
   skillsInsights,
 });
-
     } catch (err) {
       next(err);
     }
