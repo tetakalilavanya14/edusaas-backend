@@ -45,7 +45,16 @@ const { attachProctoringGateway } = require("./src/services/proctoringGateway");
 const app = express();
 
 // Enable Cross-Origin Resource Sharing (CORS)
-app.use(cors());
+const corsOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: corsOrigins,
+  })
+);
 // Mount webhooks route BEFORE express.json() so it can use express.raw()
 app.use("/api/webhooks", require("./src/routes/webhooks.routes"));
 
