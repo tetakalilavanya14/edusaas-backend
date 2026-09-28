@@ -66,6 +66,48 @@ app.get("/", (req, res) => {
   });
 });
 
+
+// Platform health check
+app.get("/api/health", async (req, res) => {
+  const startedAt = Date.now();
+
+  try {
+    const database = await repo.health.database();
+
+    const responseTimeMs = Date.now() - startedAt;
+
+    const overallStatus =
+      database.status === "ok" ? "ok" : "degraded";
+
+    return res.status(overallStatus === "ok" ? 200 : 503).json({
+      status: overallStatus,
+      timestamp: new Date().toISOString(),
+      responseTimeMs,
+      services: {
+        backend: {
+          status: "ok",
+        },
+        database,
+      },
+    });
+  } catch (error) {
+    return res.status(503).json({
+      status: "error",
+      timestamp: new Date().toISOString(),
+      responseTimeMs: Date.now() - startedAt,
+      services: {
+        backend: {
+          status: "ok",
+        },
+        database: {
+          status: "error",
+        },
+      },
+    });
+  }
+});
+
+
 // Serve Swagger API documentation
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 // Provide the Swagger specification as a JSON file

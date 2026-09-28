@@ -505,6 +505,10 @@ router.get(
   "/:id/eligible-students",
   authRequired,
   async (req, res, next) => {
+
+    const routeStartedAt = Date.now();
+
+
     try {
        console.log(" ELIGIBLE STUDENTS API HIT:", req.params.id);
 
@@ -611,7 +615,7 @@ const appliedStudentIds = new Set(
 );
 
 const unappliedDomainStudents = domainStudents;
-  
+
 console.log(
   "ALL STUDENTS:",
   students.map((s) => ({
@@ -631,23 +635,17 @@ console.log(
     domain_role_id: s.domain_role_id,
   }))
 );
-      // 6. Calculate match for every student
 
+console.log("DOMAIN STUDENTS COUNT:", domainStudents.length);
 
-      const results = [];
+     const results = [];
 
-console.log(
-  "DOMAIN STUDENTS:",
-  domainStudents.map((s) => ({
-    id: s.id,
-    name: s.name,
-    email: s.email,
-    domain_role_id: s.domain_role_id,
-  }))
-);
+// Process a limited number of students concurrently.
+// This prevents the eligible-students API from becoming
+// increasingly slow as the number of students grows.
+const STUDENT_CONCURRENCY = 5;
 
-for (const student of domainStudents) {
-
+const processStudent = async (student) => {
   const matchedSkillNames = [];
   const missingSkillNames = [];
   const partialSkillNames = [];
@@ -655,25 +653,28 @@ for (const student of domainStudents) {
   // --------------------------------------------------
   // CASE 1: Job/domain has NO required skills
   // --------------------------------------------------
+
   if (!hasRequiredSkills) {
     console.log(
       "NO REQUIRED SKILLS - INCLUDING STUDENT:",
       student.email
     );
-    const applicationData =
-  await getApplicationData(student.id);
 
-    results.push({
+    const applicationData =
+      await getApplicationData(student.id);
+
+    return {
       id: student.id,
-      name: student.name,
+      name:
+      student.name && student.name.trim().toLowerCase() !== "user"
+      ? student.name
+      : student.username || student.name,
       email: student.email,
       domain_role_id: student.domain_role_id,
 
       domain_role:
         student.domainRole?.domain_name || job.title,
 
-      // No skills to compare yet.
-      // Final assessment can influence this later.
       skill_match: 0,
       fit_category: "Possible Fit",
 
@@ -681,18 +682,26 @@ for (const student of domainStudents) {
       missing_skills: [],
       partial_skills: [],
 
-      eligible: true,
-    });
+      application_id: applicationData.application_id,
+      application_status:
+        applicationData.application_status,
+      interview: applicationData.interview,
 
-    continue;
+      eligible: true,
+    };
   }
 
   // --------------------------------------------------
   // CASE 2: Job/domain HAS required skills
   // --------------------------------------------------
 
-  const completedSession =
-    await repo.quizSessions.findCompletedByUser(student.id);
+  // These two operations don't depend on each other,
+  // so run them together.
+  const [completedSession, applicationData] =
+    await Promise.all([
+      repo.quizSessions.findCompletedByUser(student.id),
+      getApplicationData(student.id),
+    ]);
 
   console.log("SESSION:", {
     email: student.email,
@@ -702,7 +711,7 @@ for (const student of domainStudents) {
   // Keep existing behavior:
   // skill-based matching requires completed assessment.
   if (!completedSession) {
-    continue;
+    return null;
   }
 
   console.log("STUDENT SESSION CHECK:", {
@@ -735,7 +744,9 @@ for (const student of domainStudents) {
     );
 
     const studentResult =
-      studentSkillMap.get(Number(requiredSkill.skill_id));
+      studentSkillMap.get(
+        Number(requiredSkill.skill_id)
+      );
 
     const studentLevel =
       studentResult?.skill_level || 0;
@@ -799,15 +810,19 @@ for (const student of domainStudents) {
     fitCategory = "Possible Fit";
   }
 
-const applicationData =
-  await getApplicationData(student.id);
 
 let aiHiringMatch = null;
+
 try {
   const aiResp = await aimlClient.predictHiring({
     experience_years: 0,
-    required_experience_years: Number(job.experience_required || 0),
-    skill_match_score: Math.min(Math.max(skillMatch / 100, 0), 1),
+    required_experience_years: Number(
+      job.experience_required || 0
+    ),
+    skill_match_score: Math.min(
+      Math.max(skillMatch / 100, 0),
+      1
+    ),
     experience_match_score: 1.0,
     domain_match: 1,
     profile_score: skillMatch,
@@ -817,40 +832,77 @@ try {
     aiHiringMatch = aiResp.data;
   }
 } catch (aiErr) {
-  console.warn("[AIML Hiring Match] Fallback:", aiErr.message);
+  console.warn(
+    "[AIML Hiring Match] Fallback:",
+    aiErr.message
+  );
 }
-  
-results.push({
+
+  return {
   id: student.id,
-  name: student.name,
+  name:
+    student.name &&
+    student.name.trim().toLowerCase() !== "user"
+      ? student.name
+      : student.username || student.name,
   email: student.email,
-  domain_role_id: student.domain_role_id,
+    domain_role_id: student.domain_role_id,
 
-  domain_role:
-    student.domainRole?.domain_name || job.title,
-  skill_match: skillMatch,
-  fit_category: fitCategory,
-  ai_hiring_match: aiHiringMatch,
-  skill_match: skillMatch,
-  fit_category: fitCategory,
+    domain_role:
+      student.domainRole?.domain_name || job.title,
 
-  matched_skills: matchedSkillNames,
-  missing_skills: missingSkillNames,
-  partial_skills: partialSkillNames,
-
-  application_id: applicationData.application_id,
-  application_status: applicationData.application_status,
-  interview: applicationData.interview,
-
-  eligible: true,
-});
-
-  console.log("MATCH RESULT:", {
-    student: student.name,
-    email: student.email,
     skill_match: skillMatch,
     fit_category: fitCategory,
-  });
+    ai_hiring_match: aiHiringMatch,
+
+    matched_skills: matchedSkillNames,
+    missing_skills: missingSkillNames,
+    partial_skills: partialSkillNames,
+
+    application_id:
+      applicationData.application_id,
+
+    application_status:
+      applicationData.application_status,
+
+    interview:
+      applicationData.interview,
+
+    eligible: true,
+  };
+};
+
+// --------------------------------------------------
+// Controlled concurrency
+// --------------------------------------------------
+
+for (
+  let i = 0;
+  i < domainStudents.length;
+  i += STUDENT_CONCURRENCY
+) {
+  const batch =
+    domainStudents.slice(
+      i,
+      i + STUDENT_CONCURRENCY
+    );
+
+  console.log(
+    `[Eligible Students] Processing batch ${
+      Math.floor(i / STUDENT_CONCURRENCY) + 1
+    } with ${batch.length} students`
+  );
+
+  const batchResults =
+    await Promise.all(
+      batch.map((student) =>
+        processStudent(student)
+      )
+    );
+
+  results.push(
+    ...batchResults.filter(Boolean)
+  );
 }
 
 // ========================================
@@ -1759,7 +1811,7 @@ router.post(
       // 8. Online interviews should have a meeting link
       if (interviewType === "online") {
   if (!meeting_link || !String(meeting_link).trim()) {
-    
+
     return res.status(400).json({
       error: "Meeting link is required for an online interview.",
     });

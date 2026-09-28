@@ -761,16 +761,17 @@ model QuizSession {
 }
 
 model AssessmentReport {
-  id              Int       @id @default(autoincrement())
-  student_id      String    @db.Uuid
-  quiz_session_id Int
-  reason          String
-  evidence        String?
-  status          String    @default("Pending") @db.VarChar(30)
-  admin_id        String?   @db.Uuid
-  admin_notes     String?
-  created_at      DateTime  @default(now()) @db.Timestamp(6)
-  resolved_at     DateTime? @db.Timestamp(6)
+  id                  Int       @id @default(autoincrement())
+  student_id          String    @db.Uuid
+  quiz_session_id     Int
+  reason              String
+  evidence            String?
+  additional_evidence String?
+  status              String    @default("Pending") @db.VarChar(30)
+  admin_id            String?   @db.Uuid
+  admin_notes         String?
+  created_at          DateTime  @default(now()) @db.Timestamp(6)
+  resolved_at         DateTime? @db.Timestamp(6)
 
   student      User        @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   quiz_session QuizSession @relation(fields: [quiz_session_id], references: [session_id], onDelete: Cascade, onUpdate: NoAction)

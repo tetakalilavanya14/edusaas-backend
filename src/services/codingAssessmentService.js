@@ -1451,9 +1451,8 @@ async function completeAssessment({ userId, sessionId }) {
   // 9. Determine final status
   // ---------------------------------------------------------
 
-  const finalStatus = timedOut
-  ? "Timed Out"
-  : questionsCompleted === CODING_QUESTION_COUNT
+  const finalStatus =
+  timedOut || questionsCompleted === CODING_QUESTION_COUNT
     ? "Completed"
     : "In Progress";
 

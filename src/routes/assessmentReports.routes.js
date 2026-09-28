@@ -3,6 +3,7 @@ const repo = require("../data");
 const { authRequired } = require("../middleware/auth");
 
 const router = express.Router();
+const uploadAssessmentEvidence = require("../middleware/uploadAssessmentEvidence");
 
 /**
  * Student submits a report for a terminated assessment.
@@ -10,15 +11,23 @@ const router = express.Router();
 /**
  * Student submits a report for a terminated assessment.
  */
-router.post("/", authRequired, async (req, res, next) => {
+router.post(
+  "/",
+  authRequired,
+  uploadAssessmentEvidence.single("evidence"),
+   async (req, res, next) => {
   try {
     const studentId = req.user.sub;
     const {
       quiz_session_id,
       assessment_type = "INITIAL",
       reason,
-      evidence,
+      additional_evidence,
     } = req.body;
+
+    const evidence = req.file
+  ? req.file.filename
+  : null
 
     const sessionId = Number(quiz_session_id);
     const assessmentType = String(assessment_type).toUpperCase();
@@ -123,6 +132,9 @@ router.post("/", authRequired, async (req, res, next) => {
       student_id: studentId,
       quiz_session_id: sessionId,
       reason: String(reason).trim(),
+      additional_evidence: additional_evidence
+  ? String(additional_evidence).trim()
+  : null,
       evidence: evidence ? String(evidence).trim() : null,
     });
 

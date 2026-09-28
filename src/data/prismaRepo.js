@@ -1,4 +1,4 @@
-﻿const { PrismaClient } = require("@prisma/client");
+const { PrismaClient } = require("@prisma/client");
 const crypto = require("crypto");
 
 const prisma = new PrismaClient();
@@ -148,12 +148,13 @@ function learningProgressByEnrollment(
 
   // User rows are always fetched with role + role.permissions included so we can
   // expose `role` (name) and `permissions[]` to callers.
-  
+
 
   const mapUser = (u) =>
       u && {
         id: u.id,
         name: u.name,
+        username: u.username,
         email: u.email,
         clerk_id: u.clerk_id,
         role_id: u.role_id,
@@ -274,6 +275,28 @@ const mapAnn = (a) =>
 module.exports = {
   prisma,
 
+   //Platform health
+   health: {
+    database: async () => {
+      const startedAt = Date.now();
+
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+
+        return {
+          status: "ok",
+          responseTimeMs: Date.now() - startedAt,
+        };
+      } catch (error) {
+        return {
+          status: "error",
+          responseTimeMs: Date.now() - startedAt,
+          error: error.message,
+        };
+      }
+    },
+  },
+
   domainRoles: {
     list: async () => prisma.domainRole.findMany({ orderBy: { domain_name: "asc" } }),
   },
@@ -327,9 +350,9 @@ module.exports = {
           OR: [{ requesterId: userId }, { receiverId: userId }]
         }
       });
-      
+
       if (!conn) return { count: 0 };
-      
+
       // Delete the notification if it was a pending request
       if (conn.status === 'pending') {
         // The requester is cancelling, or receiver rejecting
@@ -356,7 +379,7 @@ module.exports = {
     searchByUsername: async (username, excludeId = null) => {
       const whereClause = { username: { contains: username, mode: "insensitive" } };
       if (excludeId) whereClause.id = { not: excludeId };
-      
+
       const users = await prisma.user.findMany({
         where: whereClause,
         select: { id: true, name: true, username: true, email: true, role: true },
@@ -402,13 +425,13 @@ module.exports = {
 
     findByClerkId: async (clerkId) =>
   mapUser(
-    await prisma.user.findUnique({
+    await prisma.user.findFirst({
       where: { clerk_id: clerkId },
       include: userInclude,
     })
   ),
 
-    deleteByClerkId: async (clerk_id) => 
+    deleteByClerkId: async (clerk_id) =>
       await prisma.user.delete({ where: { clerk_id } }),
     list: async (filters = {}) => {
       const where = {};
@@ -425,7 +448,7 @@ module.exports = {
       })).map(mapUser);
     },
     create: async (data) => {
-      // Translate `role` (name) → role_id if needed
+      // Translate `role` (name) ? role_id if needed
       let { role, role_id, permissions, ...rest } = data;
       if (!role_id && role) {
         const r = await prisma.role.findUnique({ where: { name: role } });
@@ -574,7 +597,7 @@ module.exports = {
         data: {
           initial_assessment_completed: true,
         },
-        
+
       }),
   },
 
@@ -1586,91 +1609,296 @@ if (status === "Expired") {
       return rows.map(mapReportRow);
     },
 
-    summary: async () => {
-      
-      const now = new Date();
+    update: async (id, data) => {
+      const report = await prisma.report.update({
+        where: { id },
+        data,
+      });
 
-      const [
-        totalReports,
-        activeAlerts,
-        completedEnrollments,
-        droppedEnrollments,
-        newUsers,
-        activeUsers,
-      ] = await Promise.all([
-        prisma.report.count(),
-
-        prisma.notification.count({
-          where: {
-            read_status: false,
-            OR: [
-              { expires_at: null },
-              { expires_at: { gte: now } },
-            ],
-          },
-        }),
-
-        prisma.enrollment.count({
-          where: {
-            status: "completed",
-          },
-        }),
-
-        prisma.enrollment.count({
-          where: {
-            status: {
-              in: ["dropped", "dropout", "failed"],
-            },
-          },
-        }),
-
-        prisma.user.count({
-          where: {
-            created_at: {
-              gte: new Date(now.getFullYear(), now.getMonth(), 1),
-            },
-          },
-        }),
-
-        prisma.user.count({
-          where: {
-            last_login: {
-              gte: new Date(now.getFullYear(), now.getMonth(), 1),
-            },
-          },
-        }),
-      ]);
-
-      return {
-        totalReports,
-        activeAlerts,
-
-        // No authoritative data-quality metric currently exists.
-        dataAccuracy: null,
-
-        // No uptime-monitoring history currently exists.
-        systemUptime: null,
-
-        courseEngagement: [
-          {
-            month: now.toLocaleString("en-US", { month: "short" }),
-            completions: completedEnrollments,
-            dropouts: droppedEnrollments,
-          },
-        ],
-
-        userEngagement: [
-          {
-            channel: "New Users",
-            value: newUsers,
-          },
-          {
-            channel: "Active Users",
-            value: activeUsers,
-          },
-        ],
-      };
+      return mapReportRow(report);
     },
+summary: async (userId) => {
+  const now = new Date();
+
+  const monthStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    1
+  );
+
+  const [
+    totalReports,
+    activeAlerts,
+
+    totalUsers,
+    newUsers,
+    activeUsers,
+
+    totalEnrollments,
+    completedEnrollments,
+    droppedEnrollments,
+
+    totalJobs,
+    openJobs,
+
+    totalApplications,
+    shortlistedApplications,
+    selectedApplications,
+    rejectedApplications,
+
+    totalAssessments,
+    completedAssessments,
+  ] = await Promise.all([
+    // Reports
+    prisma.report.count(),
+
+   // Admin's active/unread notifications
+prisma.notification.count({
+  where: {
+    user_id: userId,
+    read_status: false,
+    OR: [
+      { expires_at: null },
+      { expires_at: { gte: now } },
+    ],
+  },
+}),
+
+    // Users
+    prisma.user.count(),
+
+    prisma.user.count({
+      where: {
+        created_at: {
+          gte: monthStart,
+        },
+      },
+    }),
+
+    prisma.user.count({
+      where: {
+        last_login: {
+          gte: monthStart,
+        },
+      },
+    }),
+
+    // Learning / Enrollment
+    prisma.enrollment.count(),
+
+    prisma.enrollment.count({
+      where: {
+        status: "completed",
+      },
+    }),
+
+    prisma.enrollment.count({
+      where: {
+        status: {
+          in: ["dropped", "dropout", "failed"],
+        },
+      },
+    }),
+
+    // Recruitment / Jobs
+    prisma.job.count(),
+
+    prisma.job.count({
+      where: {
+        status: "open",
+      },
+    }),
+
+    // Recruitment / Applications
+    prisma.application.count(),
+
+    prisma.application.count({
+      where: {
+        status: "shortlisted",
+      },
+    }),
+
+    prisma.application.count({
+      where: {
+        status: "selected",
+      },
+    }),
+
+    prisma.application.count({
+      where: {
+        status: "rejected",
+      },
+    }),
+
+    // Assessments
+    prisma.assessment.count(),
+
+    prisma.assessment.count({
+      where: {
+        completed: true,
+      },
+    }),
+  ]);
+
+    const [
+    enrollmentsMissingUser,
+    enrollmentsMissingCourse,
+    applicationsMissingJob,
+    applicationsMissingStudent,
+  ] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS count
+      FROM education.enrollments e
+      LEFT JOIN education.users u ON u.id = e.user_id
+      WHERE u.id IS NULL
+    `,
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS count
+      FROM education.enrollments e
+      LEFT JOIN education.courses c ON c.id = e.course_id
+      WHERE c.id IS NULL
+    `,
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS count
+      FROM education.applications a
+      LEFT JOIN education.jobs j ON j.id = a.job_id
+      WHERE j.id IS NULL
+    `,
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS count
+      FROM education.applications a
+      LEFT JOIN education.users u ON u.id = a.student_id
+      WHERE u.id IS NULL
+    `,
+  ]);
+
+  const invalidRelationships =
+    enrollmentsMissingUser[0].count +
+    enrollmentsMissingCourse[0].count +
+    applicationsMissingJob[0].count +
+    applicationsMissingStudent[0].count;
+
+  const dataAccuracy =
+    invalidRelationships === 0 ? 100 : 0;
+
+
+const courseEngagement = [];
+
+for (let i = 5; i >= 0; i--) {
+  const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+  const nextMonthStart = new Date(
+    now.getFullYear(),
+    now.getMonth() - i + 1,
+    1
+  );
+
+  const [monthlyCompleted, monthlyDropped] = await Promise.all([
+    prisma.enrollment.count({
+      where: {
+        enrolled_at: {
+          gte: monthStart,
+          lt: nextMonthStart,
+        },
+        status: "completed",
+      },
+    }),
+    prisma.enrollment.count({
+      where: {
+        enrolled_at: {
+          gte: monthStart,
+          lt: nextMonthStart,
+        },
+        status: {
+          in: ["dropped", "dropout", "failed"],
+        },
+      },
+    }),
+  ]);
+
+  courseEngagement.push({
+    month: monthStart.toLocaleString("en-US", {
+      month: "short",
+    }),
+    completions: monthlyCompleted,
+    dropouts: monthlyDropped,
+  });
+}
+
+const completionRate =
+  totalEnrollments === 0
+    ? 0
+    : Math.round((completedEnrollments / totalEnrollments) * 100);
+
+const dropoutRate =
+  totalEnrollments === 0
+    ? 0
+    : Math.round((droppedEnrollments / totalEnrollments) * 100);
+
+//shortlist rate
+    const shortlistRate =
+  totalApplications === 0
+    ? 0
+    : Math.round((shortlistedApplications / totalApplications) * 100);
+
+const selectionRate =
+  totalApplications === 0
+    ? 0
+    : Math.round((selectedApplications / totalApplications) * 100);
+
+
+  return {
+    totalReports,
+    activeAlerts,
+
+    dataAccuracy,
+
+    // No uptime-monitoring history currently exists.
+    systemUptime: null,
+
+    users: {
+      total: totalUsers,
+      newThisMonth: newUsers,
+      activeThisMonth: activeUsers,
+    },
+
+    learning: {
+      totalEnrollments,
+      completedEnrollments,
+      droppedEnrollments,
+      completionRate,
+      dropoutRate
+    },
+
+    recruitment: {
+      totalJobs,
+      openJobs,
+      totalApplications,
+      shortlistedApplications,
+      selectedApplications,
+      rejectedApplications,
+      shortlistRate,
+      selectionRate
+    },
+
+    assessments: {
+      totalAssessments,
+      completedAssessments,
+    },
+
+   courseEngagement,
+
+    userEngagement: [
+      {
+        channel: "New Users",
+        value: newUsers,
+      },
+      {
+        channel: "Active Users",
+        value: activeUsers,
+      },
+    ],
+  };
+},
   },
   settings: {
     all: async () => {
@@ -1954,7 +2182,7 @@ if (status === "Expired") {
       )
     ),
   },
-  
+
   skills: {
   list: async () =>
     prisma.skill.findMany({
@@ -3248,7 +3476,7 @@ if (status === "Expired") {
       });
     },
   },
- 
+
   miniProjects: {
     createAssignment: async (data) => {
       return prisma.miniProjectAssignment.create({
@@ -4373,7 +4601,7 @@ if (status === "Expired") {
 
     return activities;
   },
-  
+
   insights: async () => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -4701,7 +4929,7 @@ if (status === "Expired") {
 
   // Count actual applicants
   const newApplicants = apps.length;
-  
+
   // Candidate matching counts
   let strong = 0;
   let good = 0;
@@ -4758,7 +4986,7 @@ const domainStudents = students.filter(
     for (const student of domainStudents) {
 
 
-     
+
       // Latest completed assessment
       const completedSession =
         await prisma.quizSession.findFirst({
@@ -4848,7 +5076,7 @@ if (skillName) {
             )
           : 0;
 
-        
+
 
       if (skillMatch >= 80) {
         strong++;
@@ -4960,7 +5188,7 @@ return {
             },
           },
         }),
-    
+
     prisma.gapReport.findFirst({
       where: {
         user_id,
@@ -5069,9 +5297,9 @@ return {
     ).length;
 
     const skillsReadiness = enrollments.length > 0 ? Math.round(enrollments.reduce(
-                  (sum, enrollment) =>sum + (enrollment.completion_percentage || 0),0) 
+                  (sum, enrollment) =>sum + (enrollment.completion_percentage || 0),0)
                   / enrollments.length): 0;
-    
+
     const enrollmentActivities = enrollments.map((enrollment) => ({
       id: enrollment.id,
       title: `Enrolled in ${enrollment.course.title}`,
@@ -5241,7 +5469,7 @@ return {
     studentName: user?.name,
     domainRoleId: user?.domain_role_id,
     domainRole: user?.domainRole?.domain_name || null,
-    assessmentCompleted: !!user?.profile?.initial_assessment_completed,  
+    assessmentCompleted: !!user?.profile?.initial_assessment_completed,
     learningProgressPercentage,
     completedLessons,
     totalLessons,
