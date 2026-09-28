@@ -366,6 +366,18 @@ router.post("/refresh", async (req, res, next) => {
       });
     }
 
+    // Verify the database record has not expired.
+    if (
+      !matchedStoredToken.expires_at ||
+      matchedStoredToken.expires_at <= new Date()
+    ) {
+      await repo.refreshTokens.delete(matchedStoredToken.id);
+
+      return res.status(401).json({
+        error: "Invalid or expired refresh token.",
+      });
+    }
+
     // Delete the used refresh token
     await repo.refreshTokens.delete(matchedStoredToken.id);
 

@@ -237,16 +237,15 @@ router.post("/sync", async (req, res, next) => {
         updateData.clerk_id = clerkId;
       }
 
-      // If the frontend explicitly passed a role
+      // Security: an existing user's role must not be changed by the client.
+      // Role changes must come through trusted server/admin flows.
       if (
         req.body.role &&
         req.body.role !== user.role
       ) {
-        console.log(
-          `[SYNC] Updating user role from ${user.role} to ${req.body.role}`
+        console.warn(
+          `[SYNC] Ignoring client-supplied role change for user ${user.id}: ${user.role} -> ${req.body.role}`
         );
-
-        updateData.role = req.body.role;
       }
 
       const effectiveRole =
