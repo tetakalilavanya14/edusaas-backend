@@ -36,11 +36,10 @@ module.exports = {
   appEnv: APP_ENV || "default",
   port: parseInt(process.env.PORT, 10) || 5000,
 
-  jwtSecret: process.env.JWT_SECRET || "dev-secret-change-me",
+  jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || "1h",
 
-  refreshJwtSecret:
-    process.env.JWT_REFRESH_SECRET || "dev-refresh-secret-change-me",
+  refreshJwtSecret: process.env.JWT_REFRESH_SECRET,
 
   refreshJwtExpiresIn:
     process.env.JWT_REFRESH_EXPIRES_IN || "7d",

@@ -8,21 +8,69 @@ async function recalculateCourseProgress(userId, courseId) {
   try {
     const lessons = await repo.lessons.listByCourse(courseId);
     if (!lessons || lessons.length === 0) return;
-    
+
     const progressList = await repo.progress.listByUser(userId);
+
     const completedLessonIds = new Set(
-      progressList.filter(p => p.completion_flag).map(p => p.lesson_id)
+      progressList
+        .filter((p) => p.completion_flag)
+        .map((p) => p.lesson_id)
     );
-    
+
     let completedCount = 0;
-    for (const l of lessons) {
-      if (completedLessonIds.has(l.id)) {
+
+    for (const lesson of lessons) {
+      if (completedLessonIds.has(lesson.id)) {
         completedCount++;
       }
     }
-    
-    const percentage = Math.round((completedCount / lessons.length) * 100);
-    await repo.enrollments.update(userId, courseId, { completion_percentage: percentage });
+
+    const percentage = Math.min(
+      100,
+      Math.round((completedCount / lessons.length) * 100)
+    );
+
+    await repo.enrollments.update(userId, courseId, {
+      completion_percentage: percentage,
+      ...(percentage >= 100 ? { status: "completed" } : {}),
+    });
+
+    // Award achievement and certificate once the course is completed.
+    if (percentage >= 100) {
+      const course = await repo.courses.findById(courseId);
+
+      // Reuse an existing certificate if one already exists.
+      let certificate = await repo.certificates.findByUserAndCourse(
+        userId,
+        courseId
+      );
+
+      if (!certificate) {
+        certificate = await repo.certificates.create({
+          user_id: userId,
+          course_id: courseId,
+        });
+      }
+
+      // Prevent duplicate course-completion achievements.
+      const existingAchievements =
+        await repo.achievements.listByUser(userId);
+
+      const alreadyAwarded = existingAchievements.some(
+        (achievement) =>
+          achievement.milestone === "Course Completion" &&
+          achievement.certificate_id === certificate.id
+      );
+
+      if (!alreadyAwarded) {
+        await repo.achievements.create({
+          user_id: userId,
+          badge_name: "Course Completion",
+          milestone: "Course Completion",
+          certificate_id: certificate.id,
+        });
+      }
+    }
   } catch (err) {
     console.error("Error recalculating course progress:", err);
   }

@@ -8,11 +8,11 @@ const crypto = require("crypto");
 const CONTAINER_MAX_TIMEOUT = 30000;
 
 const DOCKER_IMAGES = {
-    python: process.env.CODING_DOCKER_PYTHON_IMAGE,
-    cpp: process.env.CODING_DOCKER_CPP_IMAGE,
-    c: process.env.CODING_DOCKER_C_IMAGE,
-    java: process.env.CODING_DOCKER_JAVA_IMAGE,
-    javascript: process.env.CODING_DOCKER_JAVASCRIPT_IMAGE
+    python: process.env.CODING_DOCKER_PYTHON_IMAGE || "shivateja1234/edusaas-python:latest",
+    cpp: process.env.CODING_DOCKER_CPP_IMAGE || "shivateja1234/edusaas-cpp:latest",
+    c: process.env.CODING_DOCKER_C_IMAGE || "shivateja1234/edusaas-c:latest",
+    java: process.env.CODING_DOCKER_JAVA_IMAGE || "shivateja1234/edusaas-java:latest",
+    javascript: process.env.CODING_DOCKER_JAVASCRIPT_IMAGE || "shivateja1234/edusaas-javascript:latest"
 };
 
 /**

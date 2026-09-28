@@ -180,6 +180,42 @@ async function checkCodePlagiarism(payload) {
 
 
 // ---------------------------------------------------------------------
+// 5. Mini Project Plagiarism Detection
+// ---------------------------------------------------------------------
+async function checkMiniProjectPlagiarism(args = {}) {
+  const submission = args.submission || {};
+  const comparisonSubmissions = args.comparison_submissions || args.comparisonSubmissions || [];
+
+  const normalizeFiles = (files = []) =>
+    (Array.isArray(files) ? files : []).map((file) => ({
+      path: String(file.path || file.filename || "main.py"),
+      language: String(
+        file.language ||
+        (String(file.path || file.filename).endsWith(".js") ? "javascript" : "python")
+      ),
+      code: String(file.code || file.content || ""),
+    }));
+
+  const payload = {
+    submission: {
+      submission_id: String(submission.submission_id || "sub_target"),
+      files: normalizeFiles(submission.files),
+    },
+    comparison_submissions: comparisonSubmissions.map((comparison, idx) => ({
+      submission_id: String(comparison.submission_id || `sub_comp_${idx + 1}`),
+      files: normalizeFiles(comparison.files),
+    })),
+  };
+
+  return callAIML(
+    "/api/plagiarism/mini-project/check",
+    payload,
+    "POST"
+  );
+}
+
+
+// ---------------------------------------------------------------------
 // 5. Descriptive Answer Evaluation (XLNet)
 // ---------------------------------------------------------------------
 async function evaluateDescriptiveAnswer({ questionText, studentAnswerText, referenceAnswerText }) {
@@ -204,13 +240,69 @@ async function predictFraud(fraudData) {
 // ---------------------------------------------------------------------
 async function analyzeSentiment(postData) {
   if (postData.student_id) postData.student_id = clerkToInt(postData.student_id);
-  return callAIML("/sentiment/predict-sentiment", postData, "POST");
+  return callAIML("/sentiment/predict", postData, "POST");
 }
 
 async function analyzeToxicity(postData) {
   if (postData.student_id) postData.student_id = clerkToInt(postData.student_id);
   return callAIML("/toxicity/predict", postData, "POST");
 }
+
+// ---------------------------------------------------------------------
+// 8. Performance Prediction
+// ---------------------------------------------------------------------
+async function predictPerformance(data) {
+  const payload = {
+    avg_quiz_score: Number(data.avg_quiz_score || 0),
+    avg_assignment_score: Number(data.avg_assignment_score || 0),
+    assignment_submission_rate: Number(data.assignment_submission_rate || 0),
+    attendance_percentage: Number(data.attendance_percentage || 0),
+  };
+  return callAIML("/performance/predict", payload, "POST");
+}
+
+// ---------------------------------------------------------------------
+// 9. Skill Demand Forecasting
+// ---------------------------------------------------------------------
+async function getAvailableSkills() {
+  return callAIML("/skills", null, "GET");
+}
+
+async function forecastSkillDemand(skillName, periods = 6) {
+  const encoded = encodeURIComponent(skillName.toLowerCase().trim());
+  return callAIML(`/predict/${encoded}?periods=${periods}`, null, "GET");
+}
+
+async function forecastSkillBatch(skills = [], periods = 6) {
+  return callAIML("/predict/batch", { skills, periods }, "POST");
+}
+
+// ---------------------------------------------------------------------
+// 10. AI Skill Gap Engine
+// ---------------------------------------------------------------------
+async function analyzeSkillGap({ student_skills = [], required_skills = [] }) {
+  // Normalize if arrays of strings were sent into standard engine shape
+  const studentFormatted = student_skills.map((s, idx) => {
+    if (typeof s === "string") {
+      return { skill_id: idx + 1, skill_name: s, skill_level: 3 };
+    }
+    return s;
+  });
+
+  const requiredFormatted = required_skills.map((r, idx) => {
+    if (typeof r === "string") {
+      return { skill_id: idx + 1, skill_name: r, required_level: 4 };
+    }
+    return r;
+  });
+
+  return callAIML("/api/skill-gap/analyze", {
+    student_skills: studentFormatted,
+    required_skills: requiredFormatted,
+  }, "POST");
+}
+
+
 
 module.exports = {
   callAIML,
@@ -220,8 +312,15 @@ module.exports = {
   getRecommendations,
   predictHiring,
   checkCodePlagiarism,
+  checkMiniProjectPlagiarism,
   evaluateDescriptiveAnswer,
   predictFraud,
   analyzeSentiment,
   analyzeToxicity,
+  predictPerformance,
+  getAvailableSkills,
+  forecastSkillDemand,
+  forecastSkillBatch,
+  analyzeSkillGap,
 };
+

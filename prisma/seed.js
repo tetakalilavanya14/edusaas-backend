@@ -1,67 +1,7 @@
 const { PrismaClient } = require("@prisma/client");
 require("../src/config/env");
 
-const PERMISSIONS = [
-  // Dashboards
-  { name: "dashboards:student", category: "Dashboards", description: "Access the student dashboard" },
-  { name: "dashboards:educator", category: "Dashboards", description: "Access the educator dashboard" },
-  { name: "dashboards:employer", category: "Dashboards", description: "Access the employer dashboard" },
-  { name: "admin:insights", category: "Admin", description: "Access admin insights" },
-
-  // Courses
-  { name: "courses:create", category: "Courses", description: "Create a new course" },
-  { name: "courses:update", category: "Courses", description: "Update a course" },
-  { name: "courses:delete", category: "Courses", description: "Delete a course" },
-  { name: "courses:assign", category: "Courses", description: "Assign a course to a student" },
-  { name: "courses:enroll", category: "Courses", description: "Enroll in a course" },
-
-  // Lessons
-  { name: "lessons:create", category: "Lessons", description: "Create a new lesson" },
-  { name: "lessons:update", category: "Lessons", description: "Update a lesson" },
-  { name: "lessons:delete", category: "Lessons", description: "Delete a lesson" },
-
-  // Users
-  { name: "users:list", category: "Users", description: "List all users" },
-  { name: "users:profile:view", category: "Users", description: "View user profiles" },
-  { name: "users:profile:update", category: "Users", description: "Update user profiles" },
-
-  
-// Jobs
-{ name: "jobs:view", category: "Jobs", description: "View job postings" },
-{ name: "jobs:create", category: "Jobs", description: "Create a job posting" },
-{ name: "jobs:update", category: "Jobs", description: "Update a job posting" },
-{ name: "jobs:delete", category: "Jobs", description: "Delete a job posting" },
-{ name: "jobs:view-applications", category: "Jobs", description: "View job applications" },
-];
-
-const ROLES = ["student", "educator", "admin", "employer"];
-
-const ROLE_PERMISSIONS = {
-  student: [
-    "dashboards:student",
-    "courses:enroll",
-    "users:profile:view",
-    "users:profile:update",
-  ],
-  educator: [
-    "dashboards:educator",
-    "courses:create",
-    "courses:update",
-    "courses:delete",
-    "courses:assign", // <-- This is the new permission being added
-    "lessons:create",
-    "lessons:update",
-    "lessons:delete",
-  ],
-  admin: PERMISSIONS.map((p) => p.name), // Admin gets all permissions
-  employer: [
-  "dashboards:employer",
-  "jobs:view",
-  "jobs:create",
-  "jobs:update",
-  "jobs:delete",
-],
-};
+const { PERMISSIONS, ROLES, ROLE_PERMISSIONS } = require("../src/config/rbac");
 const prisma = new PrismaClient();
 
 async function main() {

@@ -144,6 +144,18 @@ router.post("/", authRequired, permissionRequired("courses:create"), upload.sing
  *     responses:
  *       204: { description: Deleted }
  */
+router.get("/educator/reviews", authRequired, async (req, res, next) => {
+  try {
+    const isEducator = req.user.role === "educator";
+    const isAdmin = req.user.role === "admin";
+    if (!isEducator && !isAdmin) {
+      return res.status(403).json({ error: "Only educators and admins can view course reviews." });
+    }
+    const result = await repo.courseRatings.listByEducator(req.user.sub);
+    return res.json(result);
+  } catch (err) { next(err); }
+});
+
 router.get("/:id", async (req, res, next) => {
   try {
     const c = await repo.courses.findById(req.params.id);
@@ -295,6 +307,85 @@ router.post("/:id/assign", authRequired, permissionRequired("courses:assign"), a
   } catch (err) {
     next(err);
   }
+});
+
+/**
+ * @openapi
+ * /api/courses/{id}/ratings:
+ *   get:
+ *     tags: [Courses]
+ *     summary: Get reviews and rating stats for a course
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Course ratings and reviews }
+ *   post:
+ *     tags: [Courses]
+ *     summary: Rate and review a course
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rating]
+ *             properties:
+ *               rating: { type: number, minimum: 1, maximum: 5 }
+ *               review: { type: string }
+ *     responses:
+ *       200: { description: Rating saved }
+ */
+router.get("/:id/ratings", async (req, res, next) => {
+  try {
+    const data = await repo.courseRatings.listByCourse(req.params.id);
+    return res.json(data);
+  } catch (err) { next(err); }
+});
+
+router.get("/:id/ratings/me", authRequired, async (req, res, next) => {
+  try {
+    const userRating = await repo.courseRatings.getForUser(req.user.sub, req.params.id);
+    return res.json(userRating || { rating: null, review: null });
+  } catch (err) { next(err); }
+});
+
+router.post("/:id/ratings", authRequired, async (req, res, next) => {
+  try {
+    const { rating, review } = req.body || {};
+    const numRating = Number(rating);
+    if (isNaN(numRating) || numRating < 1 || numRating > 5) {
+      return res.status(400).json({ error: "Rating must be a number between 1 and 5" });
+    }
+
+    // Verify course exists
+    const course = await repo.courses.findById(req.params.id);
+    if (!course) {
+      return res.status(404).json({ error: "Course not found" });
+    }
+
+    const saved = await repo.courseRatings.upsert({
+      user_id: req.user.sub,
+      course_id: req.params.id,
+      rating: numRating,
+      review: review ? String(review).trim() : null,
+    });
+
+    return res.json({
+      success: true,
+      rating: saved.rating,
+      review: saved.review,
+      message: "Rating and feedback submitted successfully",
+    });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

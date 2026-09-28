@@ -4,8 +4,23 @@ function notFound(req, res, next) {
 
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
-  const status = err.status || 500;
-  res.status(status).json({ error: err.message || "Internal server error" });
+  let status = err.status || 500;
+
+  if (err.code === "INVALID_FILE_TYPE") {
+    status = 400;
+  }
+
+  if (err.code === "LIMIT_FILE_SIZE") {
+    status = 413;
+  }
+
+  if (err.code === "LIMIT_FILE_COUNT") {
+    status = 400;
+  }
+
+  res.status(status).json({
+    error: err.message || "Internal server error",
+  });
 }
 
 module.exports = { notFound, errorHandler };

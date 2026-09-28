@@ -272,7 +272,6 @@ async function terminateAssessmentSession(sessionId, assessmentType = "QUIZ") {
     try {
       const updated = await repo.codingSessions.update(sessionId, {
         status: "Terminated",
-        ended_at: new Date(),
       });
       console.log(`[proctoring] Coding session ${sessionId} marked Terminated.`);
       return updated;

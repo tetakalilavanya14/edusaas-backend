@@ -17,7 +17,6 @@ const sendOtpEmail = async (email, otp) => {
     const formattedOtp = `${otp.slice(0, 3)} ${otp.slice(3)}`;
 
     await transporter.sendMail({
-
       from: smtpFrom,
       to: email,
       subject: "Password Reset OTP",
@@ -212,8 +211,6 @@ const sendOtpEmail = async (email, otp) => {
     throw err;
   }
 };
-
-
 const sendEmail = async ({
   to,
   subject,
@@ -242,7 +239,6 @@ const sendEmail = async ({
     throw err;
   }
 };
-
 
 module.exports = {
   transporter,

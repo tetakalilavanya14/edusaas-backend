@@ -6,6 +6,8 @@ const { clerkClient } = require("@clerk/express");
 const { isValidSubscriptionPlan } = require("../config/subscriptionPlans");
 
 const router = express.Router();
+const fs = require("fs");
+const path = require("path");
 
 const stripPwd = (user) => {
   if (!user) return user;
@@ -540,5 +542,56 @@ router.patch(
  *       200:
  *         description: Array of subscriptions
  */
+
+router.get(
+  "/assessment-reports/:id/evidence",
+  authRequired,
+  permissionRequired("reports:view"),
+  async (req, res, next) => {
+    try {
+      const reportId = Number(req.params.id);
+
+      if (!Number.isInteger(reportId)) {
+        return res.status(400).json({
+          error: "Invalid report ID.",
+        });
+      }
+
+      const report = await repo.assessmentReports.findById(reportId);
+
+      if (!report) {
+        return res.status(404).json({
+          error: "Assessment report not found.",
+        });
+      }
+
+      if (!report.evidence) {
+        return res.status(404).json({
+          error: "No evidence file was uploaded.",
+        });
+      }
+
+      const evidenceDirectory = path.resolve(
+        __dirname,
+        "../../assessment-evidence"
+      );
+
+      const fileName = path.basename(report.evidence);
+      const filePath = path.join(evidenceDirectory, fileName);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          error: "Evidence file not found.",
+        });
+      }
+
+      return res.sendFile(filePath);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+
 
 module.exports = router;

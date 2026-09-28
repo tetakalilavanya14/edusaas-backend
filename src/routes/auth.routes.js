@@ -5,9 +5,10 @@ const crypto = require('crypto')
 const repo = require("../data");
 const { sendOtpEmail } = require("../config/mail");
 const router = express.Router();
-const {authRequired} = require('../middleware/auth')
+const { authRequired } = require('../middleware/auth')
 
 const { refreshJwtSecret } = require("../config/env");
+const { clerkClient } = require("@clerk/express");
 const {
   generateAccessToken,
   generateRefreshToken,
@@ -85,17 +86,67 @@ router.post("/register", async (req, res, next) => {
       }
     }
 
-    // Hash Password
-    const password_hash = await bcrypt.hash(password, 10);
+   // Hash Password
+const password_hash = await bcrypt.hash(password, 10);
 
-    // Create User
-    const user = await repo.users.create({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      role,
-      password_hash,
-      domain_role_id: role === "student" ? domain_role_id : null,
-    });
+// Create Clerk User
+let clerkUser;
+
+try {
+  const emailValue = email.trim().toLowerCase();
+
+const usernameBase = emailValue
+  .split("@")[0]
+  .replace(/[^a-zA-Z0-9_]/g, "");
+
+const username = `${usernameBase}_${Date.now()}`;
+
+clerkUser = await clerkClient.users.createUser({
+  emailAddress: [emailValue],
+  password,
+  firstName: name.trim(),
+  username,
+  unsafeMetadata: {
+    role,
+    domain_role_id: role === "student" ? domain_role_id : null,
+  },
+});
+} catch (clerkErr) {
+  console.error("[REGISTER] Failed to create Clerk user:", clerkErr);
+
+  return res.status(400).json({
+    error:
+      clerkErr?.errors?.[0]?.longMessage ||
+      clerkErr?.errors?.[0]?.message ||
+      "Failed to create Clerk account",
+  });
+}
+
+// Create PostgreSQL User
+let user;
+
+try {
+  user = await repo.users.create({
+    name: name.trim(),
+    email: email.trim().toLowerCase(),
+    role,
+    password_hash,
+    clerk_id: clerkUser.id,
+    domain_role_id: role === "student" ? domain_role_id : null,
+  });
+} catch (dbErr) {
+  // Prevent an orphan Clerk account if PostgreSQL creation fails
+  try {
+    await clerkClient.users.deleteUser(clerkUser.id);
+  } catch (cleanupErr) {
+    console.error(
+      "[REGISTER] Failed to clean up Clerk user:",
+      cleanupErr.message
+    );
+  }
+
+  throw dbErr;
+}
 
     // Create Profile (Students)
     if (role === "student") {
@@ -179,16 +230,16 @@ router.post("/login", async (req, res, next) => {
         error: "email and password are required",
       });
     }
-  // find user
-   const user = await repo.users.findByEmail(
-  email.trim().toLowerCase()
-);
+    // find user
+    const user = await repo.users.findByEmail(
+      email.trim().toLowerCase()
+    );
 
-if (!user) {
-  return res.status(401).json({
-    error: "invalid credentials",
-  });
-}
+    if (!user) {
+      return res.status(401).json({
+        error: "invalid credentials",
+      });
+    }
 
 
     // Verify Password
@@ -235,7 +286,7 @@ if (!user) {
       token_hash,
       expires_at: new Date(decodedRefreshToken.exp * 1000),
     })
-    
+
     // Success Response
     return res.status(200).json({
       accessToken,
@@ -312,6 +363,18 @@ router.post("/refresh", async (req, res, next) => {
     if (!matchedStoredToken) {
       return res.status(401).json({
         error: "Invalid refresh token.",
+      });
+    }
+
+    // Verify the database record has not expired.
+    if (
+      !matchedStoredToken.expires_at ||
+      matchedStoredToken.expires_at <= new Date()
+    ) {
+      await repo.refreshTokens.delete(matchedStoredToken.id);
+
+      return res.status(401).json({
+        error: "Invalid or expired refresh token.",
       });
     }
 
@@ -415,7 +478,91 @@ router.post("/logout", authRequired, async (req, res, next) => {
     next(err);
   }
 });
+/**
+ * @openapi
+ * /api/auth/change-password:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Change password for authenticated user
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - currentPassword
+ *               - newPassword
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Authentication or current password error
+ */
+router.post("/change-password", authRequired, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
 
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        error: "Current password and new password are required",
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        error: "New password must be at least 8 characters long",
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        error: "New password must be different from current password",
+      });
+    }
+
+    const user = await repo.users.findById(req.user.id);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "User not found",
+      });
+    }
+
+    const currentPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.password_hash
+    );
+
+    if (!currentPasswordValid) {
+      return res.status(401).json({
+        error: "Current password is incorrect",
+      });
+    }
+
+    const password_hash = await bcrypt.hash(newPassword, 10);
+
+    await repo.users.updatePassword(
+      user.id,
+      password_hash
+    );
+
+    return res.status(200).json({
+      message: "Password changed successfully",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 router.post("/forgot-password", async (req, res, next) => {
   try {
     const { email } = req.body || {};
@@ -514,7 +661,7 @@ router.post("/verify-otp", async (req, res, next) => {
     // Step 6: REPLACED BCRYPT WITH SHA-256 COMPARE
     // Convert the incoming string to a SHA-256 hex string
     const incomingHash = crypto.createHash('sha256').update(otp.trim()).digest('hex');
-    
+
     // Compare directly with database record string
     const isValid = (incomingHash === otpRecord.otp_hash);
 

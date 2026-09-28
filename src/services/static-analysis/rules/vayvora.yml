@@ -1,0 +1,170 @@
+rules:
+
+  # ============================================================
+  # JavaScript / TypeScript - Security
+  # ============================================================
+
+  - id: vayvora-javascript-eval
+    languages:
+      - javascript
+      - typescript
+    message: "Avoid eval() because dynamically evaluated code can lead to code execution vulnerabilities."
+    severity: ERROR
+    metadata:
+      category: Security
+    pattern: eval(...)
+
+  - id: vayvora-javascript-function-constructor
+    languages:
+      - javascript
+      - typescript
+    message: "Avoid dynamically constructing executable code with the Function constructor."
+    severity: ERROR
+    metadata:
+      category: Security
+    pattern: new Function(...)
+
+  - id: vayvora-javascript-child-process-exec
+    languages:
+      - javascript
+      - typescript
+    message: "Review child_process.exec() usage carefully. Dynamically constructed commands can lead to command injection."
+    severity: ERROR
+    metadata:
+      category: Security
+    pattern: child_process.exec(...)
+
+  - id: vayvora-javascript-exec
+    languages:
+      - javascript
+      - typescript
+    message: "Review exec() usage carefully when command arguments contain user-controlled data."
+    severity: ERROR
+    metadata:
+      category: Security
+    pattern: exec(...)
+
+
+  # ============================================================
+  # JavaScript / TypeScript - Secrets
+  # ============================================================
+
+  - id: vayvora-javascript-hardcoded-password
+    languages:
+      - javascript
+      - typescript
+    message: "Potential hardcoded password detected. Secrets should be provided through secure configuration."
+    severity: ERROR
+    metadata:
+      category: Security
+    patterns:
+      - pattern-either:
+          - pattern: |
+              const $X = "..."
+          - pattern: |
+              let $X = "..."
+          - pattern: |
+              var $X = "..."
+      - metavariable-regex:
+          metavariable: $X
+          regex: "(?i)(password|passwd|pwd)"
+
+  - id: vayvora-javascript-hardcoded-api-key
+    languages:
+      - javascript
+      - typescript
+    message: "Potential hardcoded API key detected."
+    severity: ERROR
+    metadata:
+      category: Security
+    patterns:
+      - pattern-either:
+          - pattern: |
+              const $X = "..."
+          - pattern: |
+              let $X = "..."
+          - pattern: |
+              var $X = "..."
+      - metavariable-regex:
+          metavariable: $X
+          regex: "(?i)(api[_-]?key|apikey)"
+
+
+  # ============================================================
+  # JavaScript / TypeScript - Error Handling
+  # ============================================================
+
+  - id: vayvora-javascript-empty-catch
+    languages:
+      - javascript
+      - typescript
+    message: "Empty catch block detected. Errors may be silently ignored."
+    severity: WARNING
+    metadata:
+      category: Error Handling
+    pattern: |
+      try {
+        ...
+      } catch ($ERR) {
+      }
+
+
+  # ============================================================
+  # JavaScript / TypeScript - Code Quality
+  # ============================================================
+
+  - id: vayvora-javascript-console-log
+    languages:
+      - javascript
+      - typescript
+    message: "console.log() detected. Remove debugging output from production code where appropriate."
+    severity: WARNING
+    metadata:
+      category: Code Quality
+    pattern: console.log(...)
+
+
+  # ============================================================
+  # Python - Security
+  # ============================================================
+
+  - id: vayvora-python-eval
+    languages:
+      - python
+    message: "Avoid eval() because dynamically evaluated code can lead to code execution vulnerabilities."
+    severity: ERROR
+    metadata:
+      category: Security
+    pattern: eval(...)
+
+  - id: vayvora-python-exec
+    languages:
+      - python
+    message: "Avoid exec() because dynamically executed code can lead to code execution vulnerabilities."
+    severity: ERROR
+    metadata:
+      category: Security
+    pattern: exec(...)
+
+  - id: vayvora-python-hardcoded-password
+    languages:
+      - python
+    message: "Potential hardcoded password detected."
+    severity: ERROR
+    metadata:
+      category: Security
+    patterns:
+    - pattern-either:
+        - pattern: $X = "..."
+    - metavariable-regex:
+        metavariable: $X
+        regex: "(?i)(password|passwd|pwd)"
+
+  - id: vayvora-python-console-print
+    languages:
+      - python
+    message: "Debug print statement detected. Remove debugging output from production code where appropriate."
+    severity: WARNING
+    metadata:
+      category: Code Quality
+    pattern: print(...)

@@ -1,0 +1,36 @@
+# ==============================================================================
+# OPTIONAL: Containerized Deployment Reference
+# ==============================================================================
+# NOTE: Running the API and Worker inside Docker containers is OPTIONAL.
+# The primary architecture runs the API (server.js) and Worker (worker.js)
+# directly on the Node.js runtime with Git as the single source of truth.
+#
+# Docker is REQUIRED ONLY on the host machine to execute untrusted student
+# code in coding assessments (dockerService.js).
+# ==============================================================================
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vayvora-api
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env.docker
+    environment:
+      APP_ENV: stage
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vayvora-worker
+    env_file:
+      - .env.docker
+    environment:
+      APP_ENV: stage
+    command: ["node", "worker.js"]
+    restart: unless-stopped

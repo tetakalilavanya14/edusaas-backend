@@ -52,7 +52,16 @@ router.get("/", authRequired, async (req, res, next) => {
       const userEnrollments = (await repo.enrollments.listByUser(req.user.sub)) || [];
       const completedCourses = userEnrollments
         .filter((e) => e.status === "completed" || e.completed)
-        .map((e) => ({ course_id: e.course_id }));
+        .map((e) => {
+          const matchedCourse = allCourses.find((c) => String(c.id) === String(e.course_id));
+          const courseTitle = matchedCourse?.title || e.course?.title || "Completed Course";
+          return {
+            course_id: String(e.course_id),
+            id: String(e.course_id),
+            course_name: courseTitle,
+            title: courseTitle,
+          };
+        });
 
       let baseCourseName = "Machine Learning";
       if (userEnrollments.length > 0) {
@@ -77,10 +86,21 @@ router.get("/", authRequired, async (req, res, next) => {
       });
 
       if (aiData && aiData.success && aiData.data) {
+        // Resolve any missing pathway step course_name using allCourses catalog
+        const resolvedPathway = (aiData.data.learning_pathway || []).map((step) => {
+          if (step && (!step.course_name || String(step.course_name).trim() === "")) {
+            const matched = allCourses.find((c) => String(c.id) === String(step.course_id));
+            if (matched && matched.title) {
+              return { ...step, course_name: matched.title };
+            }
+          }
+          return step;
+        });
+
         aiResult = [{
           type: "ai_suggestions",
           suggestions: aiData.data.recommendations || aiData.data,
-          learning_pathway: aiData.data.learning_pathway || [],
+          learning_pathway: resolvedPathway,
           source: "ai",
         }];
       }

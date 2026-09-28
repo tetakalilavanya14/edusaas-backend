@@ -9,51 +9,54 @@ datasource db {
 }
 
 model User {
-  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                    String                    @db.VarChar(255)
-  username                String?                   @unique @db.VarChar(255)
-  clerk_id                String?                   @unique @db.VarChar(255)
-  email                   String                    @unique @db.VarChar(255)
-  role_id                 String                    @db.Uuid
-  password_hash           String
-  status                  String                    @default("active") @db.VarChar(50)
-  last_login              DateTime?                 @db.Timestamp(6)
-  created_at              DateTime                  @default(now()) @db.Timestamp(6)
-  domain_role_id          String?                   @db.Uuid
-  achievements            Achievement[]
-  announcements           Announcement[]            @relation("EducatorAnnouncements")
-  applications            Application[]
-  assessments             Assessment[]
-  authOtps                AuthOtp?
-  certificates            Certificate[]
-  courseProgress          CourseProgress[]
-  courseRatings           CourseRating[]
-  community_bookmarks     community_bookmarks[]
-  community_comments      community_comments[]
-  community_posts         community_posts[]
-  community_reactions     community_reactions[]
-  taughtCourses           Course[]                  @relation("EducatorCourses")
-  enrollments             Enrollment[]
-  final_submissions       final_submissions[]
-  gapReports              GapReport[]
-  jobs                    Job[]                     @relation("EmployerJobs")
-  notifications           Notification[]
-  profile                 Profile?
-  progress                Progress[]
-  quizSessions            QuizSession[]
-  recommendations         Recommendation[]
-  refreshTokens           RefreshToken[]
-  student_asked_questions student_asked_questions[]
-  studentProfiles         StudentProfile[]
-  studentSkills           StudentSkill[]
-  subscriptions           Subscription[]
-  tasks                   Task[]
-  user_coding_sessions    user_coding_sessions[]
-  coding_submissions      coding_submissions[]
-  role                    Role                      @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_role")
-  domainRole              DomainRole?               @relation(fields: [domain_role_id], references: [domain_role_id])
-  sentConnections         Connection[]              @relation("SentConnections")
-  receivedConnections     Connection[]              @relation("ReceivedConnections")
+  id                            String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                          String                    @db.VarChar(255)
+  username                      String?                   @unique @db.VarChar(255)
+  clerk_id                      String?                   @unique @db.VarChar(255)
+  email                         String                    @unique @db.VarChar(255)
+  role_id                       String                    @db.Uuid
+  password_hash                 String
+  status                        String                    @default("active") @db.VarChar(50)
+  last_login                    DateTime?                 @db.Timestamp(6)
+  created_at                    DateTime                  @default(now()) @db.Timestamp(6)
+  domain_role_id                String?                   @db.Uuid
+  achievements                  Achievement[]
+  announcements                 Announcement[]            @relation("EducatorAnnouncements")
+  applications                  Application[]
+  assessments                   Assessment[]
+  authOtps                      AuthOtp?
+  certificates                  Certificate[]
+  courseProgress                CourseProgress[]
+  courseRatings                 CourseRating[]
+  community_bookmarks           community_bookmarks[]
+  community_comments            community_comments[]
+  community_posts               community_posts[]
+  community_reactions           community_reactions[]
+  taughtCourses                 Course[]                  @relation("EducatorCourses")
+  enrollments                   Enrollment[]
+  final_submissions             final_submissions[]
+  gapReports                    GapReport[]
+  jobs                          Job[]                     @relation("EmployerJobs")
+  miniProjectAssignmentsCreated MiniProjectAssignment[]   @relation("EducatorMiniProjectAssignments")
+  miniProjectSubmissions        MiniProjectSubmission[]   @relation("StudentMiniProjectSubmissions")
+  notifications                 Notification[]
+  profile                       Profile?
+  progress                      Progress[]
+  quizSessions                  QuizSession[]
+  assessmentReports             AssessmentReport[]
+  recommendations               Recommendation[]
+  refreshTokens                 RefreshToken[]
+  student_asked_questions       student_asked_questions[]
+  studentProfiles               StudentProfile[]
+  studentSkills                 StudentSkill[]
+  subscriptions                 Subscription[]
+  tasks                         Task[]
+  user_coding_sessions          user_coding_sessions[]
+  coding_submissions            coding_submissions[]
+  role                          Role                      @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_role")
+  domainRole                    DomainRole?               @relation(fields: [domain_role_id], references: [domain_role_id])
+  sentConnections               Connection[]              @relation("SentConnections")
+  receivedConnections           Connection[]              @relation("ReceivedConnections")
 
   @@index([role_id], map: "idx_users_role")
   @@index([domain_role_id])
@@ -69,8 +72,8 @@ model Connection {
   createdAt   DateTime @default(now()) @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @db.Timestamptz(6)
 
-  requester   User     @relation("SentConnections", fields: [requesterId], references: [id], onDelete: Cascade)
-  receiver    User     @relation("ReceivedConnections", fields: [receiverId], references: [id], onDelete: Cascade)
+  requester User @relation("SentConnections", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("ReceivedConnections", fields: [receiverId], references: [id], onDelete: Cascade)
 
   @@unique([requesterId, receiverId])
   @@map("connections")
@@ -150,14 +153,20 @@ model Assessment {
 }
 
 model GapReport {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String   @db.Uuid
-  readiness_score Float
+  id      String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id String @db.Uuid
+
+  readiness_score         Float
+  initial_readiness_score Float?
+  final_readiness_score   Float?
+
   missing_skills  String[]
   recommendations Json?
-  created_at      DateTime @default(now()) @db.Timestamp(6)
-  updated_at      DateTime @default(now()) @updatedAt @db.Timestamp(6)
-  user            User     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_gapreport_user")
+
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamp(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_gapreport_user")
 
   @@index([user_id], map: "idx_gapreport_user")
   @@map("gap_reports")
@@ -169,11 +178,14 @@ model CourseRating {
   user_id    String   @db.Uuid
   course_id  String   @db.Uuid
   rating     Float
+  review     String?
   created_at DateTime @default(now()) @db.Timestamp(6)
   updated_at DateTime @default(now()) @db.Timestamp(6)
   course     Course   @relation(fields: [course_id], references: [id])
   user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@unique([user_id, course_id])
+  @@index([course_id])
   @@map("course_ratings")
   @@schema("education")
 }
@@ -313,31 +325,36 @@ model plagiarism_matches {
   @@schema("education")
 }
 
+
 model Job {
-  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  employer_id          String         @db.Uuid
-  title                String         @db.VarChar(255)
-  description          String?
-  requirements         String?
-  required_skills      String[]
-  status               String         @default("open") @db.VarChar(50)
-  created_at           DateTime       @default(now()) @db.Timestamp(6)
-  preferred_skills     String[]       @default([])
-  qualification        String?        @db.VarChar(100)
-  eligible_branches    String[]       @default([])
-  employment_type      String?        @db.VarChar(50)
-  work_mode            String?        @db.VarChar(50)
-  location             String?        @db.VarChar(255)
-  salary               String?        @db.VarChar(255)
-  application_deadline DateTime?      @db.Timestamp(6)
-  responsibilities     String?
-  require_video        Boolean        @default(false)
-  video_max_duration   Int?
-  video_prompt         String?
-  applications         Application[]
-  employer             User           @relation("EmployerJobs", fields: [employer_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_job_employer")
-  notifications        Notification[]
-  jobSkills            JobSkill[]
+  id                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employer_id              String   @db.Uuid
+  title                    String   @db.VarChar(255)
+  description              String?
+  responsibilities         String?
+  requirements             String?
+  required_skills          String[]
+  preferred_skills         String[] @default([])
+  qualification            String?  @db.VarChar(255)
+  eligible_branches        String[] @default([])
+  employment_type          String?  @db.VarChar(100)
+  work_mode                String?  @db.VarChar(100)
+  location                 String?  @db.VarChar(255)
+  salary                   String?  @db.VarChar(100)
+  application_deadline     String?  @db.VarChar(100)
+  require_video            Boolean? @default(false)
+  video_max_duration       Int?     @default(60)
+  video_prompt             String?
+  status                   String   @default("open") @db.VarChar(50)
+  created_at               DateTime @default(now()) @db.Timestamp(6)
+  domain_role_id           String?  @db.Uuid
+  minimum_experience_years Float?   @default(0)
+
+  applications  Application[]
+  jobSkills     JobSkill[]
+  employer      User           @relation("EmployerJobs", fields: [employer_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_job_employer")
+  domainRole    DomainRole?    @relation(fields: [domain_role_id], references: [domain_role_id])
+  notifications Notification[]
 
   @@index([employer_id], map: "idx_jobs_employer")
   @@map("jobs")
@@ -365,9 +382,10 @@ model Application {
   skill_match      Float?
   applied_at       DateTime    @default(now()) @db.Timestamp(6)
   application_data Json?
-  job              Job         @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_application_job")
-  student          User        @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_application_student")
-  interviews       Interview[]
+
+  job        Job         @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_application_job")
+  student    User        @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_application_student")
+  interviews Interview[]
 
   @@unique([job_id, student_id], map: "uq_application")
   @@index([job_id], map: "idx_application_job")
@@ -405,8 +423,9 @@ model Notification {
   expires_at   DateTime? @db.Timestamp(6)
   job_id       String?   @db.Uuid
   reference_id String?   @db.VarChar(255)
-  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_notification_user")
-  job          Job?      @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_notification_user")
+  job  Job? @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id], map: "idx_notification_user")
   @@index([job_id], map: "idx_notification_job")
@@ -623,20 +642,22 @@ model RefreshToken {
 }
 
 model DomainRole {
-  domain_role_id String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  domain_name    String    @unique @db.VarChar(100)
-  category       String?   @db.VarChar(50)
-  created_at     DateTime? @default(now())
-
-  requiredSkills    DomainRequiredSkill[]
-  final_submissions final_submissions[]
-  quizSessions      QuizSession[]
-  studentProfiles   StudentProfile[]
-  users             User[]
+  domain_role_id         String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  domain_name            String                  @unique @db.VarChar(100)
+  category               String?                 @db.VarChar(50)
+  created_at             DateTime?               @default(now())
+  requiredSkills         DomainRequiredSkill[]
+  final_submissions      final_submissions[]
+  jobs                   Job[]
+  quizSessions           QuizSession[]
+  studentProfiles        StudentProfile[]
+  users                  User[]
+  miniProjectAssignments MiniProjectAssignment[] @relation("DomainRoleMiniProjectAssignments")
 
   @@map("domain_roles")
   @@schema("education")
 }
+
 
 model Skill {
   skill_id    Int       @id @default(autoincrement())
@@ -721,6 +742,7 @@ model QuizSession {
   remaining_seconds    Int?
   paused_at            DateTime?             @db.Timestamp(6)
   proctoring_events    proctoring_events[]
+  assessmentReports    AssessmentReport[]
   domainRole           DomainRole            @relation(fields: [domain_role_id], references: [domain_role_id], onUpdate: NoAction)
   user                 User                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   quiz_state           quiz_state[]
@@ -735,6 +757,29 @@ model QuizSession {
   @@index([status], map: "idx_quiz_sessions_status")
   @@index([user_id], map: "idx_quiz_sessions_user")
   @@map("quiz_sessions")
+  @@schema("education")
+}
+
+model AssessmentReport {
+  id                  Int       @id @default(autoincrement())
+  student_id          String    @db.Uuid
+  quiz_session_id     Int
+  reason              String
+  evidence            String?
+  additional_evidence String?
+  status              String    @default("Pending") @db.VarChar(30)
+  admin_id            String?   @db.Uuid
+  admin_notes         String?
+  created_at          DateTime  @default(now()) @db.Timestamp(6)
+  resolved_at         DateTime? @db.Timestamp(6)
+
+  student      User        @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quiz_session QuizSession @relation(fields: [quiz_session_id], references: [session_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([student_id])
+  @@index([quiz_session_id])
+  @@index([status])
+  @@index([created_at])
   @@schema("education")
 }
 
@@ -1037,6 +1082,139 @@ model submission_test_results {
   coding_test_cases  coding_test_cases  @relation(fields: [test_case_id], references: [test_case_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_test_result_case")
   coding_submissions coding_submissions @relation(fields: [submission_id], references: [submission_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_test_result_submission")
 
+  @@schema("education")
+}
+
+model MiniProjectAssignment {
+  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  educator_id       String                  @db.Uuid
+  domain_role_id    String                  @db.Uuid
+  title             String                  @db.VarChar(255)
+  problem_statement String
+  instructions      String?
+  status            String                  @default("DRAFT") @db.VarChar(30)
+  assigned_at       DateTime?               @db.Timestamp(6)
+  due_at            DateTime?               @db.Timestamp(6)
+  created_at        DateTime                @default(now()) @db.Timestamp(6)
+  updated_at        DateTime                @updatedAt @db.Timestamp(6)
+  educator          User                    @relation("EducatorMiniProjectAssignments", fields: [educator_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  domainRole        DomainRole              @relation("DomainRoleMiniProjectAssignments", fields: [domain_role_id], references: [domain_role_id], onDelete: NoAction, onUpdate: NoAction)
+  submissions       MiniProjectSubmission[] @relation("MiniProjectAssignmentSubmissions")
+
+  @@index([educator_id], map: "idx_mini_project_assignments_educator")
+  @@index([domain_role_id], map: "idx_mini_project_assignments_domain_role")
+  @@index([status], map: "idx_mini_project_assignments_status")
+  @@index([due_at], map: "idx_mini_project_assignments_due_at")
+  @@map("mini_project_assignments")
+  @@schema("education")
+}
+
+model MiniProjectSubmission {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assignment_id  String @db.Uuid
+  student_id     String @db.Uuid
+  attempt_number Int    @default(1)
+
+  repository_url String  @db.VarChar(500)
+  branch         String  @default("main") @db.VarChar(255)
+  commit_sha     String? @db.VarChar(64)
+
+  status       String    @default("SUBMITTED") @db.VarChar(30)
+  submitted_at DateTime? @db.Timestamp(6)
+
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  updated_at DateTime @updatedAt
+
+  assignment MiniProjectAssignment @relation("MiniProjectAssignmentSubmissions", fields: [assignment_id], references: [id], onDelete: Cascade)
+  student    User                  @relation("StudentMiniProjectSubmissions", fields: [student_id], references: [id], onDelete: Cascade)
+  analysis   MiniProjectAnalysis?
+
+  @@unique([assignment_id, student_id], map: "uq_mini_project_submission_student_assignment")
+  @@index([assignment_id], map: "idx_mini_project_submissions_assignment")
+  @@index([student_id], map: "idx_mini_project_submissions_student")
+  @@index([status], map: "idx_mini_project_submissions_status")
+  @@index([commit_sha], map: "idx_mini_project_submissions_commit_sha")
+  @@map("mini_project_submissions")
+  @@schema("education")
+}
+
+model MiniProjectAnalysis {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  submission_id          String    @unique @db.Uuid
+  status                 String    @default("QUEUED") @db.VarChar(30)
+  static_analysis_status String    @default("PENDING") @db.VarChar(30)
+  plagiarism_status      String    @default("PENDING") @db.VarChar(30)
+  ai_review_status       String    @default("NOT_REQUESTED") @db.VarChar(30)
+  readiness_score        Decimal?  @db.Decimal(5, 2)
+  languages              Json?
+  project_type           String?   @db.VarChar(100)
+  started_at             DateTime? @db.Timestamp(6)
+  completed_at           DateTime? @db.Timestamp(6)
+  error_message          String?
+  created_at             DateTime  @default(now()) @db.Timestamp(6)
+  updated_at             DateTime  @updatedAt
+
+  submission       MiniProjectSubmission       @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  findings         StaticAnalysisFinding[]
+  plagiarism_check MiniProjectPlagiarismCheck?
+
+  @@index([status], map: "idx_mini_project_analysis_status")
+  @@index([static_analysis_status], map: "idx_mini_project_analysis_static_status")
+  @@index([plagiarism_status], map: "idx_mini_project_analysis_plagiarism_status")
+  @@map("mini_project_analysis")
+  @@schema("education")
+}
+
+model StaticAnalysisFinding {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  analysis_id String   @db.Uuid
+  severity    String   @db.VarChar(20)
+  category    String   @db.VarChar(100)
+  rule        String   @db.VarChar(255)
+  file        String   @db.VarChar(1000)
+  line        Int?
+  message     String
+  created_at  DateTime @default(now()) @db.Timestamp(6)
+
+  analysis MiniProjectAnalysis @relation(fields: [analysis_id], references: [id], onDelete: Cascade)
+
+  @@index([analysis_id], map: "idx_static_analysis_findings_analysis")
+  @@index([severity], map: "idx_static_analysis_findings_severity")
+  @@index([category], map: "idx_static_analysis_findings_category")
+  @@map("static_analysis_findings")
+  @@schema("education")
+}
+
+model MiniProjectPlagiarismCheck {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  analysis_id        String   @unique @db.Uuid
+  status             String   @db.VarChar(30)
+  highest_similarity Decimal? @db.Decimal(5, 2)
+  comparison_count   Int      @default(0)
+  created_at         DateTime @default(now()) @db.Timestamp(6)
+  updated_at         DateTime @updatedAt
+
+  analysis MiniProjectAnalysis          @relation(fields: [analysis_id], references: [id], onDelete: Cascade)
+  matches  MiniProjectPlagiarismMatch[]
+
+  @@map("mini_project_plagiarism_checks")
+  @@schema("education")
+}
+
+model MiniProjectPlagiarismMatch {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  plagiarism_check_id   String   @db.Uuid
+  matched_submission_id String   @db.Uuid
+  similarity            Decimal? @db.Decimal(5, 2)
+  risk_level            String?  @db.VarChar(30)
+  matched_files         Json?
+  created_at            DateTime @default(now()) @db.Timestamp(6)
+
+  plagiarism_check MiniProjectPlagiarismCheck @relation(fields: [plagiarism_check_id], references: [id], onDelete: Cascade)
+
+  @@index([plagiarism_check_id], map: "idx_mini_project_plagiarism_matches_check")
+  @@index([matched_submission_id], map: "idx_mini_project_plagiarism_matches_submission")
+  @@map("mini_project_plagiarism_matches")
   @@schema("education")
 }
 

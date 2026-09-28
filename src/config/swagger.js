@@ -25,6 +25,7 @@ const options = {
       { name: "Users" },
       { name: "Assessments" },
       { name: "GapReport" },
+      { name: "SkillGapAnalysis" },
       { name: "Courses" },
       { name: "Enrollments" },
       { name: "Jobs" },

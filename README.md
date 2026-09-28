@@ -20,9 +20,11 @@ Install dependencies and configure the required environment files (`.env.dev` an
 
 ## Run
 
+### 1. HTTP API (server.js)
+
 ```bash
-npm run start:dev    # in-memory mode
-npm run start:stage  # connects to Azure Postgres
+npm run start:dev    # in-memory / local dev env
+npm run start:stage  # connects to persistent Postgres
 npm start            # alias for start:stage
 npm run dev          # nodemon + dev env
 npm run dev:stage    # nodemon + stage env
@@ -32,6 +34,32 @@ On boot you'll see `[env] APP_ENV=dev` or `[env] APP_ENV=stage` so you always kn
 
 - API root: http://localhost:5000
 - Swagger UI: http://localhost:5000/api-docs
+
+### 2. Static Analysis Worker (worker.js)
+
+The static analysis worker processes queued mini-project submissions in the background. It clones student code at the submitted commit to a temporary folder, runs Semgrep, and stores findings in PostgreSQL. It does **not** execute student code and does **not** create Docker containers per submission.
+
+**Prerequisite:** Semgrep must be installed in the environment running the worker:
+```bash
+pip install semgrep
+semgrep --version
+```
+
+**Run the worker:**
+```bash
+npm run worker:dev   # worker with dev env
+npm run worker:stage # worker with stage env
+npm run worker       # alias for worker:stage (or: node worker.js)
+```
+
+### 3. Coding Assessment Sandboxing (Docker)
+
+Docker is used **strictly** for executing untrusted student code during live coding assessments (`src/services/dockerService.js`), providing process, CPU, memory, and network isolation.
+- Docker is **NOT** required for deploying the API or worker.
+- Docker is **NOT** required for mini-project static analysis.
+- When running coding assessments, ensure Docker Desktop / engine is active on the host.
+
+For full production architecture and process management (PM2, systemd, PaaS), see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## How env selection works
 

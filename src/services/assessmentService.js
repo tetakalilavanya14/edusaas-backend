@@ -302,20 +302,161 @@ async function startInitialAssessment(userId) {
       }
     }
 
-    /*
+        /*
      * ----------------------------------------------------------
      * CURRENT QUESTION MUST EXIST
      * ----------------------------------------------------------
      */
+
     /*
- * ----------------------------------------------------------
- * RECOVER CURRENT QUESTION IF MISSING
- * ----------------------------------------------------------
- *
- * Older/incomplete sessions may not have current_question_id.
- * Recover the question from the persisted adaptive quiz state
- * instead of failing the entire assessment.
- */
+     * ----------------------------------------------------------
+     * RECOVER MISSING CURRENT QUESTION
+     * ----------------------------------------------------------
+     *
+     * A paused session can occasionally exist without a
+     * current_question_id if assessment initialization was
+     * interrupted after the session was created.
+     *
+     * Recover only when no question has been answered yet.
+     */
+
+    if (
+      !existingSession.current_question_id &&
+      existingSession.status === "Paused" &&
+      Number(existingSession.questions_answered || 0) === 0
+    ) {
+      console.log(
+        "Recovering assessment session:",
+        existingSession.session_id
+      );
+
+      const recoverySkill =
+        requiredSkills.find(
+          (rs) =>
+            rs.skill_id === existingSession.current_skill_id
+        ) || requiredSkills[0];
+
+      if (!recoverySkill) {
+        const error = new Error(
+          "Unable to recover assessment because no skill is available."
+        );
+
+        error.status = 500;
+        throw error;
+      }
+
+      /*
+       * Get questions for the current skill.
+       */
+      const recoveryQuestions =
+        await repo.questions.findBySkill(
+          recoverySkill.skill_id
+        );
+
+      if (!recoveryQuestions?.length) {
+        const error = new Error(
+          "No questions are available for the current assessment skill."
+        );
+
+        error.status = 404;
+        throw error;
+      }
+
+      /*
+       * Recreate the missing adaptive quiz state.
+       */
+      const recoveryStateResponse =
+        await flaskService.createQuizState({
+          session_id:
+            existingSession.session_id,
+
+          skill: {
+            skill_id:
+              recoverySkill.skill_id,
+
+            skill_name:
+              recoverySkill.skill.skill_name,
+          },
+        });
+
+      const recoveryState =
+        recoveryStateResponse.state;
+
+      /*
+       * Persist the recovered quiz state.
+       */
+      await repo.quizStates.create({
+        session_id:
+          existingSession.session_id,
+
+        skill_id:
+          recoverySkill.skill_id,
+
+        current_difficulty:
+          recoveryState.current_difficulty,
+
+        correct_streak:
+          recoveryState.correct_streak,
+
+        wrong_streak:
+          recoveryState.wrong_streak,
+
+        questions_answered:
+          recoveryState.questions_answered,
+
+        obtained_score:
+          recoveryState.obtained_score,
+
+        maximum_score:
+          recoveryState.maximum_score,
+
+        state:
+          recoveryState,
+      });
+
+      /*
+       * Ask the adaptive engine for the first question.
+       */
+      const recoveryQuestionResponse =
+        await flaskService.getNextQuestion({
+          state: recoveryState,
+          questions: recoveryQuestions,
+        });
+
+      if (!recoveryQuestionResponse?.question) {
+        const error = new Error(
+          "No question is available for the current assessment skill."
+        );
+
+        error.status = 500;
+        throw error;
+      }
+
+      /*
+       * Save the recovered current question.
+       */
+      await repo.quizSessions.update(
+        existingSession.session_id,
+        {
+          current_skill_id:
+            recoverySkill.skill_id,
+
+          current_question_id:
+            recoveryQuestionResponse.question.question_id,
+        }
+      );
+
+      /*
+       * Keep the in-memory session consistent for the
+       * remainder of this resume request.
+       */
+      existingSession.current_skill_id =
+        recoverySkill.skill_id;
+
+      existingSession.current_question_id =
+        recoveryQuestionResponse.question.question_id;
+    }
+
     let currentQuestion = null;
 
     if (existingSession.current_question_id) {
@@ -1432,7 +1573,7 @@ async function activateInitialAssessment(userId, sessionId) {
   const now = new Date();
 
   // Already ticking (e.g. a reconnect/double-click) — don't touch
-  // the deadline, just report the live remaining time.
+  // the deadline, just the live remaining time.
   if (quizSession.status === "In Progress") {
     if (!quizSession.deadline_at) {
       const error = new Error(
@@ -2622,23 +2763,26 @@ async function submitInitialAssessmentAnswer(
       end_time: new Date(),
     });
 
-    await repo.profiles.upsert(userId, {
-      initial_assessment_completed: true,
-    });
+    if (quizSession.assessment_type === "INITIAL") {
+      await repo.profiles.upsert(userId, {
+        initial_assessment_completed: true,
+      });
+    }
 
-    const allResults = await repo.studentSkillResults.findBySessionId(
+   const quizReadinessScore =
+    await repo.studentSkillResults.getQuizScoreBySessionId(
       sessionId
     );
 
-
-    // Quiz's own readiness metric: average % correct across skills.
-    // NOT the same number as the skill-gap engine's readiness_score
-    // (student skill level vs required skill level) below — don't
-    // conflate the two.
-    const quizReadinessScore = Math.round(
-      allResults.reduce((sum, skill) => sum + Number(skill.percentage), 0) /
-      allResults.length
-    );
+    // Persist the FINAL quiz score so a later portion can compute:
+    //   finalReadiness = finalQuizScore * 0.40 + miniProjectScore * 0.60
+    // Only runs for FINAL assessment completion; Initial quiz is unaffected.
+    if (quizSession.assessment_type === "FINAL") {
+      await skillGapService.updateFinalReadiness(
+        userId,
+        quizReadinessScore
+      );
+    }
 
     return {
       assessment_completed: true,
@@ -2788,16 +2932,29 @@ async function getAssessmentOverview(userId) {
   // Only look it up once the Initial Quiz has been completed.
   let codingSession = null;
 
-  if (initialSession?.status === "Completed") {
-    codingSession = await repo.codingSessions.findBySessionAndUser(
-      initialSession.session_id,
-      userId
-    );
-  }
+if (initialSession?.status === "Completed") {
+  codingSession = await repo.codingSessions.findBySessionAndUser(
+    initialSession.session_id,
+    userId
+  );
+}
 
-  return {
-    initialAssessment: {
-      status: initialSession?.status || "Not Started",
+const initialQuizCompleted = initialSession?.status === "Completed";
+const codingCompleted = codingSession?.status === "Completed";
+
+let initialAssessmentStatus = "Not Started";
+
+if (initialQuizCompleted && codingCompleted) {
+  initialAssessmentStatus = "Completed";
+} else if (initialQuizCompleted) {
+  initialAssessmentStatus = "In Progress";
+} else if (initialSession?.status) {
+  initialAssessmentStatus = initialSession.status;
+}
+
+return {
+  initialAssessment: {
+    status: initialAssessmentStatus,
       sessionId: initialSession?.session_id || null,
       questionsAnswered: initialSession?.questions_answered || 0,
       totalQuestions: initialSession?.total_questions || 0,

@@ -50,6 +50,39 @@ router.patch("/read-all", authRequired, async (req, res, next) => {
 
 /**
  * @openapi
+ * /api/notifications/read-announcements:
+ *   patch:
+ *     tags: [Notifications]
+ *     summary: Mark announcement notifications as read
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Successfully marked announcement notifications as read
+ */
+router.patch("/read-announcements", authRequired, async (req, res, next) => {
+  try {
+    const { announcementId } = req.body || {};
+    const where = {
+      user_id: req.user.sub,
+      type: "announcement",
+      read_status: false,
+    };
+    if (announcementId) {
+      where.reference_id = announcementId;
+    }
+    const result = await repo.prisma.notification.updateMany({
+      where,
+      data: { read_status: true },
+    });
+    return res.json({ success: true, count: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
  * /api/notifications/{id}/read:
  *   patch:
  *     tags: [Notifications]

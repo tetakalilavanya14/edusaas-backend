@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-# Copy Prisma schema and generate the database client (Required for Prisma)
+# Copy Prisma schema and generate the database client
 COPY prisma ./prisma/
 RUN npx prisma generate
 
@@ -18,25 +18,42 @@ COPY . .
 # Drop dev dependencies
 RUN npm prune --omit=dev
 
+
 # ---- Runtime stage ----
 FROM node:20-alpine AS runtime
 WORKDIR /app
+
 ENV NODE_ENV=production
 
-# Copy built dependencies and code from build stage
+# Install runtime tools:
+# - docker-cli: required by codingAssessment/dockerService.js
+# - python3 + pip: required to install Semgrep CE
+RUN apk add --no-cache \
+    docker-cli \
+    git \
+    python3 \
+    py3-pip \
+    && python3 -m pip install \
+        --no-cache-dir \
+        --break-system-packages \
+        semgrep==1.176.1 \
+    && semgrep --version \
+    && docker --version
+
+# Copy production application
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/src ./src
 COPY --from=build /app/server.js ./server.js
+COPY --from=build /app/worker.js ./worker.js
 
-# Ensure non-root node user permissions
-RUN mkdir -p uploads && chown -R node:node /app
+# Runtime directories
+RUN mkdir -p uploads \
+    && chown -R node:node /app
 
 USER node
 
-# Match the port your frontend Nginx proxy expects
 EXPOSE 5000
 
-# Execute entry point directly
 CMD ["node", "server.js"]

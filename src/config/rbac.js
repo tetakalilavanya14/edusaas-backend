@@ -8,9 +8,13 @@ const PERMISSIONS = [
   { name: "courses:create", category: "Courses", description: "Create new course" },
   { name: "courses:update", category: "Courses", description: "Edit a course" },
   { name: "courses:delete", category: "Courses", description: "Delete a course" },
+  { name: "courses:assign", category: "Courses", description: "Assign a course to a student" },
+  { name: "courses:enroll", category: "Courses", description: "Enroll in a course" },
 
   // Lessons
   { name: "lessons:create", category: "Courses", description: "Add lessons to a course" },
+  { name: "lessons:update", category: "Courses", description: "Update a lesson" },
+  { name: "lessons:delete", category: "Courses", description: "Delete a lesson" },
 
   // Enrollments
   { name: "enrollments:create", category: "Learning", description: "Enroll in a course" },
@@ -21,6 +25,12 @@ const PERMISSIONS = [
 
   // Assessments
   { name: "assessments:submit", category: "Learning", description: "Submit an assessment" },
+
+    // Mini Projects
+  { name: "mini-projects:create", category: "Learning", description: "Create mini project assignments",},
+  { name: "mini-projects:publish", category: "Learning", description: "Publish mini project assignments", },
+  { name: "mini-projects:view", category: "Learning", description: "View assigned mini projects", },
+  {name: "mini-projects:submit", category: "Learning", description: "Submit mini project", },
 
   // Gap report
   { name: "gap-report:view", category: "Learning", description: "View own gap report" },
@@ -53,10 +63,12 @@ const PERMISSIONS = [
   { name: "dashboards:educator", category: "Insights", description: "Educator dashboard" },
   { name: "dashboards:employer", category: "Insights", description: "Employer dashboard" },
 
-  // Admin scope
+  // Users & Admin scope
   { name: "users:list", category: "Admin", description: "List all users" },
   { name: "users:update", category: "Admin", description: "Edit other users" },
   { name: "users:delete", category: "Admin", description: "Delete users" },
+  { name: "users:profile:view", category: "Users", description: "View user profiles" },
+  { name: "users:profile:update", category: "Users", description: "Update user profiles" },
   { name: "admin:insights", category: "Admin", description: "Platform insights" },
   { name: "reports:view", category: "Admin", description: "Reports module" },
   { name: "reports:generate", category: "Admin", description: "Generate reports" },
@@ -78,7 +90,7 @@ const ROLES = ["student", "educator", "employer", "admin"];
 // Role → permission mapping. Easy to read, easy to extend.
 const ROLE_PERMISSIONS = {
   student: [
-    "courses:view",
+    "courses:view", "courses:enroll",
     "enrollments:create", "enrollments:view-mine",
     "progress:update",
     "assessments:submit",
@@ -89,21 +101,29 @@ const ROLE_PERMISSIONS = {
     "achievements:view-mine", "certificates:view-mine",
     "dashboards:student",
     "subscriptions:manage-mine",
+    "users:profile:view", "users:profile:update",
     "profile:edit-own",
+    "mini-projects:view",
+    "mini-projects:submit"
   ],
   educator: [
-    "courses:view", "courses:create", "courses:update", "courses:delete",
-    "lessons:create",
+    "courses:view", "courses:create", "courses:update", "courses:delete", "courses:assign",
+    "lessons:create", "lessons:update", "lessons:delete",
     "announcements:view", "announcements:send",
     "certificates:issue",
     "dashboards:educator",
+    "users:profile:view", "users:profile:update",
     "profile:edit-own",
+    "mini-projects:create",
+    "mini-projects:publish",
+    "mini-projects:view",
   ],
   employer: [
     "jobs:view", "jobs:create", "jobs:update", "jobs:delete",
     "jobs:view-applications",
     "candidates:view",
     "dashboards:employer",
+    "users:profile:view", "users:profile:update",
     "profile:edit-own",
   ],
   admin: [

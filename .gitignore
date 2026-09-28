@@ -6,6 +6,7 @@ node_modules
 .env.qa
 .env.stage
 .env.local
+.env.docker
 
 baseline_structure.sql
 

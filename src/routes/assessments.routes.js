@@ -6,7 +6,6 @@ const { authRequired } = require("../middleware/auth");
 const assessmentService = require("../services/assessmentService");
 const codingAssessmentService = require("../services/codingAssessmentService")
 const aimlClient = require("../services/aimlClient");
-console.log("ASSESSMENT SERVICE EXPORTS:", Object.keys(assessmentService));
 
 const router = express.Router();
 

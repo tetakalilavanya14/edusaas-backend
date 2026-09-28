@@ -1,3 +1,4 @@
+
 {
   "name": "edu-saas-backend",
   "version": "1.0.0",
@@ -7,12 +8,15 @@
     "start": "cross-env APP_ENV=stage node server.js",
     "start:dev": "cross-env APP_ENV=dev node server.js",
     "start:stage": "cross-env APP_ENV=stage node server.js",
+    "worker": "cross-env APP_ENV=stage node worker.js",
+    "worker:dev": "cross-env APP_ENV=dev node worker.js",
+    "worker:stage": "cross-env APP_ENV=stage node worker.js",
     "dev": "cross-env APP_ENV=dev nodemon server.js",
     "dev:stage": "cross-env APP_ENV=stage nodemon server.js",
     "db:generate": "prisma generate",
     "db:migrate:stage": "dotenv -e .env.stage -- prisma migrate dev",
     "db:seed:stage": "dotenv -e .env.stage -- prisma db seed",
-    "db:studio:stage": "dotenv -e .env.stage -- prisma studio",
+    "db:studio:stage": "dotenv -e .env.stage -- prisma db studio",
     "db:push:stage": "dotenv -e .env.stage -- prisma db push",
     "db:seed": "node prisma/seed.js"
   },

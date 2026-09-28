@@ -10,6 +10,8 @@ const aimlClient = require("../services/aimlClient");
 
 
 
+
+
 const router = express.Router();
 
 // --------------------------------------------------
@@ -310,25 +312,50 @@ router.post(
         });
       }
 
-    const job = await repo.jobs.create({
-  employer_id: req.user.sub,
-  title,
-  description: description || null,
-  responsibilities: responsibilities || null,
-  required_skills: required_skills || [],
-  preferred_skills: preferred_skills || [],
-  qualification: qualification || null,
-  eligible_branches: eligible_branches || [],
-  employment_type: employment_type || null,
-  work_mode: work_mode || null,
-  location: location || null,
-  salary: salary || null,
-  application_deadline: application_deadline || null,
-  status: status || "open",
-  require_video,
-  video_max_duration,
-  video_prompt,
-});
+      let domain_role_id = req.body.domain_role_id || null;
+
+      if (!domain_role_id && title) {
+        try {
+          const matchedDomain = await repo.prisma.domainRole.findFirst({
+            where: {
+              domain_name: {
+                equals: title,
+                mode: "insensitive",
+              },
+            },
+            select: {
+              domain_role_id: true,
+            },
+          });
+
+          if (matchedDomain) {
+            domain_role_id = matchedDomain.domain_role_id;
+          }
+        } catch {}
+      }
+
+      const job = await repo.jobs.create({
+        employer_id: req.user.sub,
+        title,
+        description: description || null,
+        responsibilities: responsibilities || null,
+        required_skills: required_skills || [],
+        preferred_skills: preferred_skills || [],
+        qualification: qualification || null,
+        eligible_branches: eligible_branches || [],
+        employment_type: employment_type || null,
+        work_mode: work_mode || null,
+        location: location || null,
+        salary: salary || null,
+        application_deadline: application_deadline || null,
+        status: status || "open",
+        require_video: Boolean(require_video),
+        video_max_duration: video_max_duration
+          ? Number(video_max_duration)
+          : 60,
+        video_prompt: video_prompt || null,
+        domain_role_id: domain_role_id || null,
+      });
 
       return res.status(201).json(job);
 
@@ -478,6 +505,10 @@ router.get(
   "/:id/eligible-students",
   authRequired,
   async (req, res, next) => {
+
+    const routeStartedAt = Date.now();
+
+
     try {
        console.log(" ELIGIBLE STUDENTS API HIT:", req.params.id);
 
@@ -516,8 +547,8 @@ console.log(
         (role) =>
           role.domain_name?.trim().toLowerCase() ===
           job.title?.trim().toLowerCase()
-      );console
-      .log("DOMAIN ROLES:", domainRoles);
+      );
+      console.log("DOMAIN ROLES:", domainRoles);
        console.log("MATCHED DOMAIN ROLE:", domainRole);
 
       if (!domainRole) {
@@ -583,11 +614,7 @@ const appliedStudentIds = new Set(
   )
 );
 
-const unappliedDomainStudents = domainStudents.filter(
-  (student) =>
-    !appliedStudentIds.has(String(student.id))
-);
-
+const unappliedDomainStudents = domainStudents;
 
 console.log(
   "ALL STUDENTS:",
@@ -608,8 +635,10 @@ console.log(
     domain_role_id: s.domain_role_id,
   }))
 );
+
       // 6. Calculate match for every student
     const results = [];
+
 
 const processStudent = async (student) => {
   const matchedSkillNames = [];
@@ -619,6 +648,7 @@ const processStudent = async (student) => {
   // --------------------------------------------------
   // CASE 1: Job/domain has NO required skills
   // --------------------------------------------------
+
   if (!hasRequiredSkills) {
     console.log(
       "NO REQUIRED SKILLS - INCLUDING STUDENT:",
@@ -630,7 +660,10 @@ const processStudent = async (student) => {
 
     return {
       id: student.id,
-      name: student.name,
+      name:
+      student.name && student.name.trim().toLowerCase() !== "user"
+      ? student.name
+      : student.username || student.name,
       email: student.email,
       domain_role_id: student.domain_role_id,
 
@@ -645,7 +678,9 @@ const processStudent = async (student) => {
       partial_skills: [],
 
       application_id: applicationData.application_id,
+
       application_status: applicationData.application_status,
+
       interview: applicationData.interview,
 
       eligible: true,
@@ -656,8 +691,13 @@ const processStudent = async (student) => {
   // CASE 2: Job/domain HAS required skills
   // --------------------------------------------------
 
-  const completedSession =
-    await repo.quizSessions.findCompletedByUser(student.id);
+  // These two operations don't depend on each other,
+  // so run them together.
+  const [completedSession, applicationData] =
+    await Promise.all([
+      repo.quizSessions.findCompletedByUser(student.id),
+      getApplicationData(student.id),
+    ]);
 
   console.log("SESSION:", {
     email: student.email,
@@ -700,7 +740,9 @@ const processStudent = async (student) => {
     );
 
     const studentResult =
-      studentSkillMap.get(Number(requiredSkill.skill_id));
+      studentSkillMap.get(
+        Number(requiredSkill.skill_id)
+      );
 
     const studentLevel =
       studentResult?.skill_level || 0;
@@ -764,13 +806,15 @@ const processStudent = async (student) => {
     fitCategory = "Possible Fit";
   }
 
-  const applicationData =
-    await getApplicationData(student.id);
-
+  
   return {
-    id: student.id,
-    name: student.name,
-    email: student.email,
+  id: student.id,
+  name:
+    student.name &&
+    student.name.trim().toLowerCase() !== "user"
+      ? student.name
+      : student.username || student.name,
+  email: student.email,
     domain_role_id: student.domain_role_id,
 
     domain_role:
@@ -782,7 +826,6 @@ const processStudent = async (student) => {
     // AIML hiring prediction removed from this endpoint
     // to avoid one remote AIML request per candidate.
     ai_hiring_match: null,
-
     matched_skills: matchedSkillNames,
     missing_skills: missingSkillNames,
     partial_skills: partialSkillNames,
@@ -799,7 +842,9 @@ const processStudent = async (student) => {
 // Controlled concurrency
 // --------------------------------------------------
 
+
 const STUDENT_CONCURRENCY = 5;
+
 
 for (
   let i = 0;
@@ -837,7 +882,7 @@ for (
 
 const skillsInsightsMap = new Map();
 
-for (const student of unappliedDomainStudents) {
+for (const student of domainStudents) {
   const completedSession =
     await repo.quizSessions.findCompletedByUser(student.id);
 
@@ -1022,7 +1067,6 @@ const allowed = [
   "video_max_duration",
   "video_prompt",
 ];
-
 
       const data = {};
 
@@ -1545,6 +1589,8 @@ router.get(
 router.get(
   "/:jobId/applications/:applicationId/video",
   authRequired,
+
+  permissionRequired("jobs:view-applications"),
   async (req, res, next) => {
     try {
       const { jobId, applicationId } = req.params;
@@ -1557,35 +1603,37 @@ router.get(
         });
       }
 
-      const application = await repo.applications.findById(applicationId);
 
-      if (!application || application.job_id !== jobId) {
-        return res.status(404).json({
-          error: "Application not found.",
-        });
-      }
+      const application =
+  await repo.applications.findById(applicationId);
 
-      const isStudent = req.user.role === "student";
-      const isOwner = job.employer_id === req.user.sub;
-      const isAdmin =
-        req.user.role === "admin" ||
-        req.user.role === "super_admin";
+if (!application || application.job_id !== jobId) {
+  return res.status(404).json({
+    error: "Application not found.",
+  });
+}
 
-      // Student can only view their own application video
-      if (isStudent && application.student_id !== req.user.sub) {
-        return res.status(403).json({
-          error: "You are not authorized to view this video.",
-        });
-      }
+const isStudent = req.user.role === "student";
+const isOwner = job.employer_id === req.user.sub;
+const isAdmin =
+  req.user.role === "admin" ||
+  req.user.role === "super_admin";
 
-      // Employer/admin authorization
-      if (!isStudent && !isOwner && !isAdmin) {
-        return res.status(403).json({
-          error: "You are not authorized to view this video.",
-        });
-      }
+// Student can only view their own application video
+if (isStudent && String(application.student_id) !== String(req.user.sub)) {
+  return res.status(403).json({
+    error: "You are not authorized to view this video.",
+  });
+}
 
-      const videoKey =
+// Only the job owner or admin can access other applicants' videos
+if (!isStudent && !isOwner && !isAdmin) {
+  return res.status(403).json({
+    error: "You are not authorized to view this video.",
+  });
+}
+
+    const videoKey =
         application.application_data?.video?.key;
 
       if (!videoKey) {
@@ -1733,7 +1781,7 @@ router.post(
       // 8. Online interviews should have a meeting link
       if (interviewType === "online") {
   if (!meeting_link || !String(meeting_link).trim()) {
-    
+
     return res.status(400).json({
       error: "Meeting link is required for an online interview.",
     });
@@ -1781,970 +1829,966 @@ router.post(
 
 
 
-      // Send interview invitation email to the student
+  let emailSent = false;
 
-let emailSent = false;
+  try {
+    const student = await repo.users.findById(application.student_id);
 
-try {
-  const student = await repo.users.findById(application.student_id);
-
-  if (student?.email) {
-    const interviewDate = scheduledDate.toLocaleString("en-IN", {
-      dateStyle: "full",
-      timeStyle: "short",
-    });
-
-    await sendEmail({
-      to: student.email,
-      subject: `Interview Invitation - ${job.title}`,
-
-      text: `
-Hi ${student.name || "Candidate"},
-
-You have been shortlisted for the ${job.title} position at Vayvora Mentor Network.
-
-Your interview has been scheduled.
-
-Interview Date & Time: ${interviewDate}
-Duration: ${interviewDuration} minutes
-Interview Type: ${interviewType}
-${meeting_link ? `Meeting Link: ${meeting_link}` : ""}
-${notes ? `Notes: ${notes}` : ""}
-
-Please make sure you are available at the scheduled time.
-
-Regards,
-Vayvora Mentor Network
-      `.trim(),
-
-      html: `
-        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#334155;">
-          <h2 style="color:#2563eb;">
-            Interview Invitation
-          </h2>
-
-          <p>
-            Hi ${student.name || "Candidate"},
-          </p>
-
-          <p>
-            You have been shortlisted for the
-            <strong>${job.title}</strong> position at
-            <strong>Vayvora Mentor Network</strong>.
-          </p>
-
-          <h3>Interview Details</h3>
-
-          <p>
-            <strong>Date & Time:</strong> ${interviewDate}<br />
-            <strong>Duration:</strong> ${interviewDuration} minutes<br />
-            <strong>Interview Type:</strong> ${interviewType}
-          </p>
-
-          ${
-            meeting_link
-              ? `
-                <p>
-                  <strong>Meeting Link:</strong><br />
-                  <a href="${meeting_link}">
-                    ${meeting_link}
-                  </a>
-                </p>
-              `
-              : ""
-          }
-
-          ${
-            notes
-              ? `
-                <p>
-                  <strong>Additional Notes:</strong><br />
-                  ${notes}
-                </p>
-              `
-              : ""
-          }
-
-          <p>
-            Please make sure you are available at the scheduled time.
-          </p>
-
-          <p>
-            Regards,<br />
-            <strong>Vayvora Mentor Network</strong>
-          </p>
-        </div>
-      `,
-    });
-
-    emailSent = true;
-  } else {
-    console.warn(
-      "[interview] Student does not have an email address:",
-      application.student_id
-    );
-  }
-} catch (emailError) {
-  // Do not fail interview scheduling if email delivery fails.
-  console.error(
-    "[interview] Interview created but invitation email failed:",
-    emailError?.message || emailError
-  );
-}
-
-      //Notifications for Scheduled interview
-      await repo.notifications.create({
-  user_id: application.student_id,
-  job_id: job.id,
-  type: "interview_scheduled",
-  message:
-    `An interview has been scheduled for your application to "${job.title}" on ` +
-    `${scheduledDate.toLocaleString()}.`,
-});
-
-      return res.status(201).json({...interview,email_sent:emailSent});
-
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-
-// --------------------------------------------------
-// Get current student's interview for a job
-// --------------------------------------------------
-router.get(
-  "/:id/my-interview",
-  authRequired,
-  async (req, res, next) => {
-    try {
-      if (req.user.role !== "student") {
-        return res.status(403).json({
-          error: "Only students can use this endpoint.",
-        });
-      }
-
-      const job = await repo.jobs.findById(req.params.id);
-
-      if (!job) {
-        return res.status(404).json({
-          error: "Job not found.",
-        });
-      }
-
-      const applications =
-        await repo.applications.listByStudent(req.user.sub);
-
-      const application = applications.find(
-        (item) => item.job_id === job.id
-      );
-
-      if (!application) {
-        return res.status(404).json({
-          error: "You have not applied for this job.",
-        });
-      }
-
-      const interview =
-        await repo.interviews.findByApplication(
-          application.id,
-        );
-
-      if (!interview) {
-        return res.status(404).json({
-          error: "No interview is scheduled for this application.",
-        });
-      }
-
-      return res.json({
-        interview,
-        application_id: application.id,
-        job_id: job.id,
-        job_title: job.title,
+    if (student?.email) {
+      const interviewDate = scheduledDate.toLocaleString("en-IN", {
+        dateStyle: "full",
+        timeStyle: "short",
       });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
 
-
-
-// --------------------------------------------------
-// Get interview for an application
-// --------------------------------------------------
-router.get(
-  "/:id/applications/:applicationId/interview",
-  authRequired,
-  async (req, res, next) => {
-    try {
-      const job = await repo.jobs.findById(req.params.id);
-
-      if (!job) {
-        return res.status(404).json({
-          error: "Job not found.",
-        });
-      }
-
-      const applications =
-        await repo.applications.listByJob(req.params.id);
-
-      const application = applications.find(
-        (item) => item.id === req.params.applicationId
-      );
-
-      if (!application) {
-        return res.status(404).json({
-          error: "Application not found for this job.",
-        });
-      }
-
-      const isOwner =
-        job.employer_id === req.user.sub;
-
-      const isAdmin =
-        req.user.role === "admin" ||
-        req.user.role === "super_admin";
-
-      const isStudent =
-        req.user.role === "student" &&
-        application.student_id === req.user.sub;
-
-      // Employer, admin, or the student who owns the application
-      if (!isOwner && !isAdmin && !isStudent) {
-        return res.status(403).json({
-          error:
-            "You are not authorized to view this interview.",
-        });
-      }
-
-      const interview =
-        await repo.interviews.findByApplication(
-          application.id
-        );
-
-      if (!interview) {
-        return res.status(404).json({
-          error:
-            "No interview is scheduled for this application.",
-        });
-      }
-
-      return res.json(interview);
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-// --------------------------------------------------
-// Update scheduled interview
-// --------------------------------------------------
-router.put(
-  "/:id/applications/:applicationId/interview",
-  authRequired,
-  permissionRequired("jobs:view-applications"),
-  async (req, res, next) => {
-    try {
-      const {
-        scheduled_at,
-        duration,
-        interview_type,
-        meeting_link,
-        notes,
-      } = req.body || {};
-
-      const job = await repo.jobs.findById(req.params.id);
-
-      if (!job) {
-        return res.status(404).json({
-          error: "Job not found.",
-        });
-      }
-
-      const isOwner = job.employer_id === req.user.sub;
-      const isAdmin =
-        req.user.role === "admin" ||
-        req.user.role === "super_admin";
-
-      if (!isOwner && !isAdmin) {
-        return res.status(403).json({
-          error:
-            "You are not authorized to update interviews for this job.",
-        });
-      }
-
-      const applications =
-        await repo.applications.listByJob(req.params.id);
-
-      const application = applications.find(
-        (item) => item.id === req.params.applicationId
-      );
-
-      if (!application) {
-        return res.status(404).json({
-          error: "Application not found for this job.",
-        });
-      }
-
-      const interview =
-        await repo.interviews.findByApplication(
-          application.id
-        );
-
-      if (!interview) {
-        return res.status(404).json({
-          error: "Interview not found.",
-        });
-      }
-
-      if (interview.status === "cancelled") {
-        return res.status(409).json({
-          error: "Cancelled interviews cannot be edited.",
-        });
-      }
-
-      const scheduledDate = new Date(scheduled_at);
-
-      if (
-        !scheduled_at ||
-        Number.isNaN(scheduledDate.getTime())
-      ) {
-        return res.status(400).json({
-          error: "A valid scheduled_at is required.",
-        });
-      }
-
-      if (scheduledDate <= new Date()) {
-        return res.status(400).json({
-          error:
-            "Interview must be scheduled for a future date and time.",
-        });
-      }
-
-      const interviewDuration = Number(duration ?? 30);
-
-      if (
-        !Number.isInteger(interviewDuration) ||
-        interviewDuration <= 0 ||
-        interviewDuration > 480
-      ) {
-        return res.status(400).json({
-          error: "duration must be between 1 and 480 minutes.",
-        });
-      }
-
-      const allowedInterviewTypes = [
-        "online",
-        "in-person",
-      ];
-
-      const interviewType =
-        interview_type || interview.interview_type;
-
-      if (!allowedInterviewTypes.includes(interviewType)) {
-        return res.status(400).json({
-          error:
-            "interview_type must be either 'online' or 'in-person'.",
-        });
-      }
-
-      if (
-        interviewType === "online" &&
-        (!meeting_link || !String(meeting_link).trim())
-      ) {
-        return res.status(400).json({
-          error:
-            "meeting_link is required for an online interview.",
-        });
-      }
-
-      const updatedInterview =
-  await repo.interviews.update(
-    interview.id,
-    {
-      scheduled_at: scheduledDate,
-      duration: interviewDuration,
-      interview_type: interviewType,
-      meeting_link:
-        meeting_link?.trim() || null,
-      notes: notes?.trim() || null,
-      status: "rescheduled",
-    }
-  );
-
-// Notify the student about the rescheduled interview
-await repo.notifications.create({
-  user_id: application.student_id,
-  job_id: job.id,
-  type: "interview_rescheduled",
-  message:
-    `Your interview for "${job.title}" has been rescheduled to ` +
-    `${scheduledDate.toLocaleString()}.`,
-});
-
-// Send rescheduled interview email
-let emailSent = false;
-
-try {
-  const student = await repo.users.findById(
-    application.student_id
-  );
-
-  if (student?.email) {
-    const interviewDate = scheduledDate.toLocaleString("en-IN", {
-      dateStyle: "full",
-      timeStyle: "short",
-    });
-
-    await sendEmail({
-      to: student.email,
-
-      subject: `Interview Rescheduled - ${job.title}`,
-
-      text: `
-Hi ${student.name || "Candidate"},
-
-Your interview for the ${job.title} position at Vayvora Mentor Network has been rescheduled.
-
-Updated Interview Details:
-
-Date & Time: ${interviewDate}
-Duration: ${interviewDuration} minutes
-Interview Type: ${interviewType}
-${meeting_link ? `Meeting Link: ${meeting_link}` : ""}
-${notes ? `Notes: ${notes}` : ""}
-
-Please make sure you are available at the updated time.
-
-Regards,
-Vayvora Mentor Network
-      `.trim(),
-
-      html: `
-        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#334155;">
-          <h2 style="color:#2563eb;">
-            Interview Rescheduled
-          </h2>
-
-          <p>
-            Hi ${student.name || "Candidate"},
-          </p>
-
-          <p>
-            Your interview for the
-            <strong>${job.title}</strong>
-            position at
-            <strong>Vayvora Mentor Network</strong>
-            has been rescheduled.
-          </p>
-
-          <h3>Updated Interview Details</h3>
-
-          <p>
-            <strong>Date & Time:</strong> ${interviewDate}<br />
-            <strong>Duration:</strong> ${interviewDuration} minutes<br />
-            <strong>Interview Type:</strong> ${interviewType}
-          </p>
-
-          ${
-            meeting_link
-              ? `
-                <p>
-                  <strong>Meeting Link:</strong><br />
-                  <a href="${meeting_link}">
-                    ${meeting_link}
-                  </a>
-                </p>
-              `
-              : ""
-          }
-
-          ${
-            notes
-              ? `
-                <p>
-                  <strong>Notes:</strong><br />
-                  ${notes}
-                </p>
-              `
-              : ""
-          }
-
-          <p>
-            Please make sure you are available at the updated time.
-          </p>
-
-          <p>
-            Regards,<br />
-            <strong>Vayvora Mentor Network</strong>
-          </p>
-        </div>
-      `,
-    });
-
-    emailSent = true;
-  }
-} catch (emailError) {
-  console.error(
-    "[interview] Interview rescheduled but email failed:",
-    emailError?.message || emailError
-  );
-}
-
-return res.json({
-  ...updatedInterview,
-  email_sent: emailSent,
-});
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-
-// --------------------------------------------------
-// Cancel scheduled interview
-// --------------------------------------------------
-router.delete(
-  "/:id/applications/:applicationId/interview",
-  authRequired,
-  permissionRequired("jobs:view-applications"),
-  async (req, res, next) => {
-    try {
-      const job = await repo.jobs.findById(req.params.id);
-
-      if (!job) {
-        return res.status(404).json({
-          error: "Job not found.",
-        });
-      }
-
-      const isOwner = job.employer_id === req.user.sub;
-      const isAdmin =
-        req.user.role === "admin" ||
-        req.user.role === "super_admin";
-
-      if (!isOwner && !isAdmin) {
-        return res.status(403).json({
-          error:
-            "You are not authorized to cancel interviews for this job.",
-        });
-      }
-
-      const applications =
-        await repo.applications.listByJob(req.params.id);
-
-      const application = applications.find(
-        (item) => item.id === req.params.applicationId
-      );
-
-      if (!application) {
-        return res.status(404).json({
-          error: "Application not found for this job.",
-        });
-      }
-
-      const interview =
-        await repo.interviews.findByApplication(
-          application.id
-        );
-
-      if (!interview) {
-        return res.status(404).json({
-          error: "Interview not found.",
-        });
-      }
-
-      if (interview.status === "cancelled") {
-        return res.status(409).json({
-          error: "Interview is already cancelled.",
-        });
-      }
-
-      const updatedInterview =
-  await repo.interviews.update(
-    interview.id,
-    {
-      status: "cancelled",
-    }
-  );
-
-
-// Notify the student about the cancelled interview
-await repo.notifications.create({
-  user_id: application.student_id,
-  job_id: job.id,
-  type: "interview_cancelled",
-  message:
-    `Your interview for "${job.title}" has been cancelled.`,
-});
-
-// Send cancellation email to the student
-let emailSent = false;
-
-try {
-  const student = await repo.users.findById(
-    application.student_id
-  );
-
-  if (student?.email) {
-    const interviewDate = new Date(
-      interview.scheduled_at
-    ).toLocaleString("en-IN", {
-      dateStyle: "full",
-      timeStyle: "short",
-    });
-
-    await sendEmail({
-      to: student.email,
-
-      subject: `Interview Cancelled - ${job.title}`,
-
-      text: `
-Hi ${student.name || "Candidate"},
-
-Your interview for the ${job.title} position at Vayvora Mentor Network has been cancelled.
-
-Previous Interview Date & Time: ${interviewDate}
-Interview Type: ${interview.interview_type || "N/A"}
-Duration: ${interview.duration || "N/A"} minutes
-
-If required, the employer may contact you with further information.
-
-Regards,
-Vayvora Mentor Network
-      `.trim(),
-
-      html: `
-        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#334155;">
-          <h2 style="color:#dc2626;">
-            Interview Cancelled
-          </h2>
-
-          <p>
-            Hi ${student.name || "Candidate"},
-          </p>
-
-          <p>
-            Your interview for the
-            <strong>${job.title}</strong>
-            position at
-            <strong>Vayvora Mentor Network</strong>
-            has been cancelled.
-          </p>
-
-          <h3>Previous Interview Details</h3>
-
-          <p>
-            <strong>Date & Time:</strong> ${interviewDate}<br />
-            <strong>Interview Type:</strong>
-            ${interview.interview_type || "N/A"}<br />
-            <strong>Duration:</strong>
-            ${interview.duration || "N/A"} minutes
-          </p>
-
-          <p>
-            If required, the employer may contact you with further information.
-          </p>
-
-          <p>
-            Regards,<br />
-            <strong>Vayvora Mentor Network</strong>
-          </p>
-        </div>
-      `,
-    });
-
-    emailSent = true;
-  } else {
-    console.warn(
-      "[interview] Student does not have an email address:",
-      application.student_id
-    );
-  }
-} catch (emailError) {
-  console.error(
-    "[interview] Interview cancelled but cancellation email failed:",
-    emailError?.message || emailError
-  );
-}
-
-return res.json({
-  ...updatedInterview,
-  email_sent: emailSent,
-});
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-
-// --------------------------------------------------
-// Send email to an applicant
-// --------------------------------------------------
-router.post(
-  "/:id/applications/:applicationId/email",
-  authRequired,
-  permissionRequired("jobs:view-applications"),
-  async (req, res, next) => {
-    try {
-      const { subject, message } = req.body || {};
-
-      // 1. Validate email content
-      if (!subject || !String(subject).trim()) {
-        return res.status(400).json({
-          error: "Email subject is required.",
-        });
-      }
-
-      if (!message || !String(message).trim()) {
-        return res.status(400).json({
-          error: "Email message is required.",
-        });
-      }
-
-      // 2. Find the job
-      const job = await repo.jobs.findById(req.params.id);
-
-      if (!job) {
-        return res.status(404).json({
-          error: "Job not found.",
-        });
-      }
-
-      // 3. Verify employer owns this job
-      const isOwner = job.employer_id === req.user.sub;
-      const isAdmin =
-        req.user.role === "admin" ||
-        req.user.role === "super_admin";
-
-      if (!isOwner && !isAdmin) {
-        return res.status(403).json({
-          error:
-            "You are not authorized to email applicants for this job.",
-        });
-      }
-
-      // 4. Find application
-      const applications =
-        await repo.applications.listByJob(req.params.id);
-
-      const application = applications.find(
-        (item) => item.id === req.params.applicationId
-      );
-
-      if (!application) {
-        return res.status(404).json({
-          error: "Application not found for this job.",
-        });
-      }
-
-      // 5. Get student details
-      const student =
-        await repo.users.findById(application.student_id);
-
-      if (!student) {
-        return res.status(404).json({
-          error: "Student not found.",
-        });
-      }
-
-      if (!student.email) {
-        return res.status(400).json({
-          error: "Student does not have an email address.",
-        });
-      }
-
-      // 6. Send email through existing SMTP service
       await sendEmail({
         to: student.email,
-        subject: String(subject).trim(),
-        text: String(message).trim(),
+        subject: `Interview Invitation - ${job.title}`,
+
+        text: `
+  Hi ${student.name || "Candidate"},
+
+  You have been shortlisted for the ${job.title} position at Vayvora Mentor Network.
+
+  Your interview has been scheduled.
+
+  Interview Date & Time: ${interviewDate}
+  Duration: ${interviewDuration} minutes
+  Interview Type: ${interviewType}
+  ${meeting_link ? `Meeting Link: ${meeting_link}` : ""}
+  ${notes ? `Notes: ${notes}` : ""}
+
+  Please make sure you are available at the scheduled time.
+
+  Regards,
+  Vayvora Mentor Network
+        `.trim(),
+
         html: `
-          <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-            <h2>Vayvora EduTech</h2>
+          <div style="font-family:Arial,sans-serif;line-height:1.6;color:#334155;">
+            <h2 style="color:#2563eb;">
+              Interview Invitation
+            </h2>
 
-            <p>${String(message)
-              .trim()
-              .replace(/\n/g, "<br />")}</p>
+            <p>
+              Hi ${student.name || "Candidate"},
+            </p>
 
-            <hr />
+            <p>
+              You have been shortlisted for the
+              <strong>${job.title}</strong> position at
+              <strong>Vayvora Mentor Network</strong>.
+            </p>
 
-            <p style="color:#64748b;font-size:12px;">
-              This email was sent by the employer through Vayvora EduTech.
+            <h3>Interview Details</h3>
+
+            <p>
+              <strong>Date & Time:</strong> ${interviewDate}<br />
+              <strong>Duration:</strong> ${interviewDuration} minutes<br />
+              <strong>Interview Type:</strong> ${interviewType}
+            </p>
+
+            ${
+              meeting_link
+                ? `
+                  <p>
+                    <strong>Meeting Link:</strong><br />
+                    <a href="${meeting_link}">
+                      ${meeting_link}
+                    </a>
+                  </p>
+                `
+                : ""
+            }
+
+            ${
+              notes
+                ? `
+                  <p>
+                    <strong>Additional Notes:</strong><br />
+                    ${notes}
+                  </p>
+                `
+                : ""
+            }
+
+            <p>
+              Please make sure you are available at the scheduled time.
+            </p>
+
+            <p>
+              Regards,<br />
+              <strong>Vayvora Mentor Network</strong>
             </p>
           </div>
         `,
       });
 
-      return res.json({
-        success: true,
-        message: "Email sent successfully.",
-      });
-    } catch (err) {
-      next(err);
+      emailSent = true;
+    } else {
+      console.warn(
+        "[interview] Student does not have an email address:",
+        application.student_id
+      );
     }
+  } catch (emailError) {
+    // Do not fail interview scheduling if email delivery fails.
+    console.error(
+      "[interview] Interview created but invitation email failed:",
+      emailError?.message || emailError
+    );
   }
-);
 
+        //Notifications for Scheduled interview
+        await repo.notifications.create({
+    user_id: application.student_id,
+    job_id: job.id,
+    type: "interview_scheduled",
+    message:
+      `An interview has been scheduled for your application to "${job.title}" on ` +
+      `${scheduledDate.toLocaleString()}.`,
+  });
 
+        return res.status(201).json({...interview,email_sent:emailSent});
 
-/**
- * Update an application's hiring status
- *
- * Allowed statuses:
- * - submitted
- * - shortlisted
- * - rejected
- */
-/**
- * Update an application's hiring status
- *
- * If an application already exists:
- *   → update it
- *
- * If no application exists:
- *   → applicationId is treated as the student ID
- *   → create a pipeline/application record
- */
-router.patch(
-  "/:id/applications/:applicationId/status",
-  authRequired,
-  permissionRequired("jobs:view-applications"),
-  async (req, res, next) => {
-    try {
-      const { status } = req.body || {};
-      const { id: jobId, applicationId } = req.params;
-
-      const allowedStatuses = [
-        "submitted",
-        "shortlisted",
-        "selected",
-        "rejected",
-      ];
-
-      if (!allowedStatuses.includes(status)) {
-        return res.status(400).json({
-          error: "Invalid application status.",
-        });
+      } catch (err) {
+        next(err);
       }
+    }
+  );
 
-      // --------------------------------------------
-      // Find job
-      // --------------------------------------------
 
-      const job = await repo.jobs.findById(jobId);
+  // --------------------------------------------------
+  // Get current student's interview for a job
+  // --------------------------------------------------
+  router.get(
+    "/:id/my-interview",
+    authRequired,
+    async (req, res, next) => {
+      try {
+        if (req.user.role !== "student") {
+          return res.status(403).json({
+            error: "Only students can use this endpoint.",
+          });
+        }
 
-      if (!job) {
-        return res.status(404).json({
-          error: "Job not found.",
+        const job = await repo.jobs.findById(req.params.id);
+
+        if (!job) {
+          return res.status(404).json({
+            error: "Job not found.",
+          });
+        }
+
+        const applications =
+          await repo.applications.listByStudent(req.user.sub);
+
+        const application = applications.find(
+          (item) => item.job_id === job.id
+        );
+
+        if (!application) {
+          return res.status(404).json({
+            error: "You have not applied for this job.",
+          });
+        }
+
+        const interview =
+          await repo.interviews.findByApplication(
+            application.id,
+          );
+
+        if (!interview) {
+          return res.status(404).json({
+            error: "No interview is scheduled for this application.",
+          });
+        }
+
+        return res.json({
+          interview,
+          application_id: application.id,
+          job_id: job.id,
+          job_title: job.title,
         });
+      } catch (err) {
+        next(err);
       }
+    }
+  );
 
-      // --------------------------------------------
-      // Authorization
-      // --------------------------------------------
 
-      const isOwner = job.employer_id === req.user.sub;
-      const isAdmin = req.user.role === "admin";
 
-      if (!isOwner && !isAdmin) {
-        return res.status(403).json({
-          error:
-            "You are not authorized to update applications for this job.",
-        });
-      }
+  // --------------------------------------------------
+  // Get interview for an application
+  // --------------------------------------------------
+  router.get(
+    "/:id/applications/:applicationId/interview",
+    authRequired,
+    async (req, res, next) => {
+      try {
+        const job = await repo.jobs.findById(req.params.id);
 
-      // --------------------------------------------
-      // Try to find existing application
-      // --------------------------------------------
+        if (!job) {
+          return res.status(404).json({
+            error: "Job not found.",
+          });
+        }
 
-      let application =
-        await repo.applications.findById(applicationId);
+        const applications =
+          await repo.applications.listByJob(req.params.id);
 
-      // --------------------------------------------
-      // Existing application
-      // --------------------------------------------
+        const application = applications.find(
+          (item) => item.id === req.params.applicationId
+        );
 
-      if (application) {
-        // Make sure application belongs to this job
-        if (application.job_id !== jobId) {
+        if (!application) {
           return res.status(404).json({
             error: "Application not found for this job.",
           });
         }
 
-        application = await repo.applications.update(
-          application.id,
-          { status }
-        );
-      } else {
-        // --------------------------------------------
-        // No application exists
-        //
-        // applicationId is actually the student ID.
-        // Create a pipeline/application record.
-        // --------------------------------------------
+        const isOwner =
+          job.employer_id === req.user.sub;
 
-        const studentId = applicationId;
+        const isAdmin =
+          req.user.role === "admin" ||
+          req.user.role === "super_admin";
 
-        // Prevent duplicate application records
-        const existing =
-          await repo.applications.findOne(
-            jobId,
-            studentId
+        const isStudent =
+          req.user.role === "student" &&
+          application.student_id === req.user.sub;
+
+        // Employer, admin, or the student who owns the application
+        if (!isOwner && !isAdmin && !isStudent) {
+          return res.status(403).json({
+            error:
+              "You are not authorized to view this interview.",
+          });
+        }
+
+        const interview =
+          await repo.interviews.findByApplication(
+            application.id
           );
 
-        if (existing) {
-          application =
-            await repo.applications.update(
-              existing.id,
-              { status }
-            );
-        } else {
-          application =
-            await repo.applications.create({
-              job_id: jobId,
-              student_id: studentId,
-              status,
-              skill_match: 0,
-              application_data: {
-                source: "employer_pipeline",
-              },
-            });
+        if (!interview) {
+          return res.status(404).json({
+            error:
+              "No interview is scheduled for this application.",
+          });
         }
+
+        return res.json(interview);
+      } catch (err) {
+        next(err);
       }
+    }
+  );
 
-      // --------------------------------------------
-      // Notify student
-      // --------------------------------------------
+  // --------------------------------------------------
+  // Update scheduled interview
+  // --------------------------------------------------
+  router.put(
+    "/:id/applications/:applicationId/interview",
+    authRequired,
+    permissionRequired("jobs:view-applications"),
+    async (req, res, next) => {
+      try {
+        const {
+          scheduled_at,
+          duration,
+          interview_type,
+          meeting_link,
+          notes,
+        } = req.body || {};
 
-      await repo.notifications.create({
-        user_id: application.student_id,
-        type:
-          status === "selected"
-            ? "application_selected"
-            : "application",
-        message:
-          status === "shortlisted"
-            ? `You have been shortlisted for ${job.title}.`
-            : status === "selected"
-            ? `Congratulations! You have been selected for ${job.title}.`
-            : status === "rejected"
-            ? `Your application for ${job.title} was not selected to proceed.`
-            : `Your application for ${job.title} is under review.`,
+        const job = await repo.jobs.findById(req.params.id);
+
+        if (!job) {
+          return res.status(404).json({
+            error: "Job not found.",
+          });
+        }
+
+        const isOwner = job.employer_id === req.user.sub;
+        const isAdmin =
+          req.user.role === "admin" ||
+          req.user.role === "super_admin";
+
+        if (!isOwner && !isAdmin) {
+          return res.status(403).json({
+            error:
+              "You are not authorized to update interviews for this job.",
+          });
+        }
+
+        const applications =
+          await repo.applications.listByJob(req.params.id);
+
+        const application = applications.find(
+          (item) => item.id === req.params.applicationId
+        );
+
+        if (!application) {
+          return res.status(404).json({
+            error: "Application not found for this job.",
+          });
+        }
+
+        const interview =
+          await repo.interviews.findByApplication(
+            application.id
+          );
+
+        if (!interview) {
+          return res.status(404).json({
+            error: "Interview not found.",
+          });
+        }
+
+        if (interview.status === "cancelled") {
+          return res.status(409).json({
+            error: "Cancelled interviews cannot be edited.",
+          });
+        }
+
+        const scheduledDate = new Date(scheduled_at);
+
+        if (
+          !scheduled_at ||
+          Number.isNaN(scheduledDate.getTime())
+        ) {
+          return res.status(400).json({
+            error: "A valid scheduled_at is required.",
+          });
+        }
+
+        if (scheduledDate <= new Date()) {
+          return res.status(400).json({
+            error:
+              "Interview must be scheduled for a future date and time.",
+          });
+        }
+
+        const interviewDuration = Number(duration ?? 30);
+
+        if (
+          !Number.isInteger(interviewDuration) ||
+          interviewDuration <= 0 ||
+          interviewDuration > 480
+        ) {
+          return res.status(400).json({
+            error: "duration must be between 1 and 480 minutes.",
+          });
+        }
+
+        const allowedInterviewTypes = [
+          "online",
+          "in-person",
+        ];
+
+        const interviewType =
+          interview_type || interview.interview_type;
+
+        if (!allowedInterviewTypes.includes(interviewType)) {
+          return res.status(400).json({
+            error:
+              "interview_type must be either 'online' or 'in-person'.",
+          });
+        }
+
+        if (
+          interviewType === "online" &&
+          (!meeting_link || !String(meeting_link).trim())
+        ) {
+          return res.status(400).json({
+            error:
+              "meeting_link is required for an online interview.",
+          });
+        }
+
+        const updatedInterview =
+    await repo.interviews.update(
+      interview.id,
+      {
+        scheduled_at: scheduledDate,
+        duration: interviewDuration,
+        interview_type: interviewType,
+        meeting_link:
+          meeting_link?.trim() || null,
+        notes: notes?.trim() || null,
+        status: "rescheduled",
+      }
+    );
+
+  // Notify the student about the rescheduled interview
+  await repo.notifications.create({
+    user_id: application.student_id,
+    job_id: job.id,
+    type: "interview_rescheduled",
+    message:
+      `Your interview for "${job.title}" has been rescheduled to ` +
+      `${scheduledDate.toLocaleString()}.`,
+  });
+
+  // Send rescheduled interview email
+  let emailSent = false;
+
+  try {
+    const student = await repo.users.findById(
+      application.student_id
+    );
+
+    if (student?.email) {
+      const interviewDate = scheduledDate.toLocaleString("en-IN", {
+        dateStyle: "full",
+        timeStyle: "short",
       });
 
-      return res.json(application);
-    } catch (err) {
-      next(err);
+      await sendEmail({
+        to: student.email,
+
+        subject: `Interview Rescheduled - ${job.title}`,
+
+        text: `
+  Hi ${student.name || "Candidate"},
+
+  Your interview for the ${job.title} position at Vayvora Mentor Network has been rescheduled.
+
+  Updated Interview Details:
+
+  Date & Time: ${interviewDate}
+  Duration: ${interviewDuration} minutes
+  Interview Type: ${interviewType}
+  ${meeting_link ? `Meeting Link: ${meeting_link}` : ""}
+  ${notes ? `Notes: ${notes}` : ""}
+
+  Please make sure you are available at the updated time.
+
+  Regards,
+  Vayvora Mentor Network
+        `.trim(),
+
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.6;color:#334155;">
+            <h2 style="color:#2563eb;">
+              Interview Rescheduled
+            </h2>
+
+            <p>
+              Hi ${student.name || "Candidate"},
+            </p>
+
+            <p>
+              Your interview for the
+              <strong>${job.title}</strong>
+              position at
+              <strong>Vayvora Mentor Network</strong>
+              has been rescheduled.
+            </p>
+
+            <h3>Updated Interview Details</h3>
+
+            <p>
+              <strong>Date & Time:</strong> ${interviewDate}<br />
+              <strong>Duration:</strong> ${interviewDuration} minutes<br />
+              <strong>Interview Type:</strong> ${interviewType}
+            </p>
+
+            ${
+              meeting_link
+                ? `
+                  <p>
+                    <strong>Meeting Link:</strong><br />
+                    <a href="${meeting_link}">
+                      ${meeting_link}
+                    </a>
+                  </p>
+                `
+                : ""
+            }
+
+            ${
+              notes
+                ? `
+                  <p>
+                    <strong>Notes:</strong><br />
+                    ${notes}
+                  </p>
+                `
+                : ""
+            }
+
+            <p>
+              Please make sure you are available at the updated time.
+            </p>
+
+            <p>
+              Regards,<br />
+              <strong>Vayvora Mentor Network</strong>
+            </p>
+          </div>
+        `,
+      });
+
+      emailSent = true;
     }
+  } catch (emailError) {
+    console.error(
+      "[interview] Interview rescheduled but email failed:",
+      emailError?.message || emailError
+    );
   }
-);
+
+  return res.json({
+    ...updatedInterview,
+    email_sent: emailSent,
+  });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+
+  // --------------------------------------------------
+  // Cancel scheduled interview
+  // --------------------------------------------------
+  router.delete(
+    "/:id/applications/:applicationId/interview",
+    authRequired,
+    permissionRequired("jobs:view-applications"),
+    async (req, res, next) => {
+      try {
+        const job = await repo.jobs.findById(req.params.id);
+
+        if (!job) {
+          return res.status(404).json({
+            error: "Job not found.",
+          });
+        }
+
+        const isOwner = job.employer_id === req.user.sub;
+        const isAdmin =
+          req.user.role === "admin" ||
+          req.user.role === "super_admin";
+
+        if (!isOwner && !isAdmin) {
+          return res.status(403).json({
+            error:
+              "You are not authorized to cancel interviews for this job.",
+          });
+        }
+
+        const applications =
+          await repo.applications.listByJob(req.params.id);
+
+        const application = applications.find(
+          (item) => item.id === req.params.applicationId
+        );
+
+        if (!application) {
+          return res.status(404).json({
+            error: "Application not found for this job.",
+          });
+        }
+
+        const interview =
+          await repo.interviews.findByApplication(
+            application.id
+          );
+
+        if (!interview) {
+          return res.status(404).json({
+            error: "Interview not found.",
+          });
+        }
+
+        if (interview.status === "cancelled") {
+          return res.status(409).json({
+            error: "Interview is already cancelled.",
+          });
+        }
+
+        const updatedInterview =
+    await repo.interviews.update(
+      interview.id,
+      {
+        status: "cancelled",
+      }
+    );
+
+
+  // Notify the student about the cancelled interview
+  await repo.notifications.create({
+    user_id: application.student_id,
+    job_id: job.id,
+    type: "interview_cancelled",
+    message:
+      `Your interview for "${job.title}" has been cancelled.`,
+  });
+
+  // Send cancellation email to the student
+  let emailSent = false;
+
+  try {
+    const student = await repo.users.findById(
+      application.student_id
+    );
+
+    if (student?.email) {
+      const interviewDate = new Date(
+        interview.scheduled_at
+      ).toLocaleString("en-IN", {
+        dateStyle: "full",
+        timeStyle: "short",
+      });
+
+      await sendEmail({
+        to: student.email,
+
+        subject: `Interview Cancelled - ${job.title}`,
+
+        text: `
+  Hi ${student.name || "Candidate"},
+
+  Your interview for the ${job.title} position at Vayvora Mentor Network has been cancelled.
+
+  Previous Interview Date & Time: ${interviewDate}
+  Interview Type: ${interview.interview_type || "N/A"}
+  Duration: ${interview.duration || "N/A"} minutes
+
+  If required, the employer may contact you with further information.
+
+  Regards,
+  Vayvora Mentor Network
+        `.trim(),
+
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.6;color:#334155;">
+            <h2 style="color:#dc2626;">
+              Interview Cancelled
+            </h2>
+
+            <p>
+              Hi ${student.name || "Candidate"},
+            </p>
+
+            <p>
+              Your interview for the
+              <strong>${job.title}</strong>
+              position at
+              <strong>Vayvora Mentor Network</strong>
+              has been cancelled.
+            </p>
+
+            <h3>Previous Interview Details</h3>
+
+            <p>
+              <strong>Date & Time:</strong> ${interviewDate}<br />
+              <strong>Interview Type:</strong>
+              ${interview.interview_type || "N/A"}<br />
+              <strong>Duration:</strong>
+              ${interview.duration || "N/A"} minutes
+            </p>
+
+            <p>
+              If required, the employer may contact you with further information.
+            </p>
+
+            <p>
+              Regards,<br />
+              <strong>Vayvora Mentor Network</strong>
+            </p>
+          </div>
+        `,
+      });
+
+      emailSent = true;
+    } else {
+      console.warn(
+        "[interview] Student does not have an email address:",
+        application.student_id
+      );
+    }
+  } catch (emailError) {
+    console.error(
+      "[interview] Interview cancelled but cancellation email failed:",
+      emailError?.message || emailError
+    );
+  }
+
+  return res.json({
+    ...updatedInterview,
+    email_sent: emailSent,
+  });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+
+  // --------------------------------------------------
+  // Send email to an applicant
+  // --------------------------------------------------
+  router.post(
+    "/:id/applications/:applicationId/email",
+    authRequired,
+    permissionRequired("jobs:view-applications"),
+    async (req, res, next) => {
+      try {
+        const { subject, message } = req.body || {};
+
+        // 1. Validate email content
+        if (!subject || !String(subject).trim()) {
+          return res.status(400).json({
+            error: "Email subject is required.",
+          });
+        }
+
+        if (!message || !String(message).trim()) {
+          return res.status(400).json({
+            error: "Email message is required.",
+          });
+        }
+
+        // 2. Find the job
+        const job = await repo.jobs.findById(req.params.id);
+
+        if (!job) {
+          return res.status(404).json({
+            error: "Job not found.",
+          });
+        }
+
+        // 3. Verify employer owns this job
+        const isOwner = job.employer_id === req.user.sub;
+        const isAdmin =
+          req.user.role === "admin" ||
+          req.user.role === "super_admin";
+
+        if (!isOwner && !isAdmin) {
+          return res.status(403).json({
+            error:
+              "You are not authorized to email applicants for this job.",
+          });
+        }
+
+        // 4. Find application
+        const applications =
+          await repo.applications.listByJob(req.params.id);
+
+        const application = applications.find(
+          (item) => item.id === req.params.applicationId
+        );
+
+        if (!application) {
+          return res.status(404).json({
+            error: "Application not found for this job.",
+          });
+        }
+
+        // 5. Get student details
+        const student =
+          await repo.users.findById(application.student_id);
+
+        if (!student) {
+          return res.status(404).json({
+            error: "Student not found.",
+          });
+        }
+
+        if (!student.email) {
+          return res.status(400).json({
+            error: "Student does not have an email address.",
+          });
+        }
+
+        // 6. Send email through existing SMTP service
+        await sendEmail({
+          to: student.email,
+          subject: String(subject).trim(),
+          text: String(message).trim(),
+          html: `
+            <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+              <h2>Vayvora EduTech</h2>
+
+              <p>${String(message)
+                .trim()
+                .replace(/\n/g, "<br />")}</p>
+
+              <hr />
+
+              <p style="color:#64748b;font-size:12px;">
+                This email was sent by the employer through Vayvora EduTech.
+              </p>
+            </div>
+          `,
+        });
+
+        return res.json({
+          success: true,
+          message: "Email sent successfully.",
+        });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
 
 
 
-module.exports = router;
+  /**
+   * Update an application's hiring status
+   *
+   * Allowed statuses:
+   * - submitted
+   * - shortlisted
+   * - rejected
+   */
+  /**
+   * Update an application's hiring status
+   *
+   * If an application already exists:
+   *   → update it
+   *
+   * If no application exists:
+   *   → applicationId is treated as the student ID
+   *   → create a pipeline/application record
+   */
+  router.patch(
+    "/:id/applications/:applicationId/status",
+    authRequired,
+    permissionRequired("jobs:view-applications"),
+    async (req, res, next) => {
+      try {
+        const { status } = req.body || {};
+        const { id: jobId, applicationId } = req.params;
+
+        const allowedStatuses = [
+          "submitted",
+          "shortlisted",
+          "selected",
+          "rejected",
+        ];
+
+        if (!allowedStatuses.includes(status)) {
+          return res.status(400).json({
+            error: "Invalid application status.",
+          });
+        }
+
+        // --------------------------------------------
+        // Find job
+        // --------------------------------------------
+
+        const job = await repo.jobs.findById(jobId);
+
+        if (!job) {
+          return res.status(404).json({
+            error: "Job not found.",
+          });
+        }
+
+        // --------------------------------------------
+        // Authorization
+        // --------------------------------------------
+
+        const isOwner = job.employer_id === req.user.sub;
+        const isAdmin = req.user.role === "admin";
+
+        if (!isOwner && !isAdmin) {
+          return res.status(403).json({
+            error:
+              "You are not authorized to update applications for this job.",
+          });
+        }
+
+        // --------------------------------------------
+        // Try to find existing application
+        // --------------------------------------------
+
+        let application =
+          await repo.applications.findById(applicationId);
+
+        // --------------------------------------------
+        // Existing application
+        // --------------------------------------------
+
+        if (application) {
+          // Make sure application belongs to this job
+          if (application.job_id !== jobId) {
+            return res.status(404).json({
+              error: "Application not found for this job.",
+            });
+          }
+
+          application = await repo.applications.update(
+            application.id,
+            { status }
+          );
+        } else {
+          // --------------------------------------------
+          // No application exists
+          //
+          // applicationId is actually the student ID.
+          // Create a pipeline/application record.
+          // --------------------------------------------
+
+          const studentId = applicationId;
+
+          // Prevent duplicate application records
+          const existing =
+            await repo.applications.findOne(
+              jobId,
+              studentId
+            );
+
+          if (existing) {
+            application =
+              await repo.applications.update(
+                existing.id,
+                { status }
+              );
+          } else {
+            application =
+              await repo.applications.create({
+                job_id: jobId,
+                student_id: studentId,
+                status,
+                skill_match: 0,
+                application_data: {
+                  source: "employer_pipeline",
+                },
+              });
+          }
+        }
+
+        // --------------------------------------------
+        // Notify student
+        // --------------------------------------------
+
+        await repo.notifications.create({
+          user_id: application.student_id,
+          type:
+            status === "selected"
+              ? "application_selected"
+              : "application",
+          message:
+            status === "shortlisted"
+              ? `You have been shortlisted for ${job.title}.`
+              : status === "selected"
+              ? `Congratulations! You have been selected for ${job.title}.`
+              : status === "rejected"
+              ? `Your application for ${job.title} was not selected to proceed.`
+              : `Your application for ${job.title} is under review.`,
+        });
+
+        return res.json(application);
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  module.exports = router;

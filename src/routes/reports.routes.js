@@ -44,7 +44,7 @@ router.get(
   permissionRequired("reports:view"),
   async (req, res, next) => {
     try {
-      const summary = await repo.reports.summary();
+      const summary = await repo.reports.summary(req.user.sub);
 
       return res.json(summary);
 
@@ -104,6 +104,32 @@ router.get(
 
       return res.json(exports);
 
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+
+router.patch(
+  "/:id",
+  authRequired,
+  permissionRequired("reports:view"),
+  async (req, res, next) => {
+    try {
+      const title = String(req.body?.title || "").trim();
+
+      if (!title) {
+        return res.status(400).json({
+          message: "Report title is required",
+        });
+      }
+
+      const report = await repo.reports.update(req.params.id, {
+        title,
+      });
+
+      return res.json(report);
     } catch (err) {
       next(err);
     }
