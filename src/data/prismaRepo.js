@@ -2018,6 +2018,17 @@ const selectionRate =
       })
     ),
 
+  findByCode: async (certificate_code) =>
+    mapCert(
+      await prisma.certificate.findUnique({
+        where: { certificate_code },
+        include: {
+          user: { select: { name: true } },
+          course: { select: { title: true } },
+        },
+      })
+    ),
+
   create: async (data) => mapCert(await prisma.certificate.create({
     data: {
       certificate_code: `EDU-${crypto.randomBytes(4).toString("hex").toUpperCase()}`,

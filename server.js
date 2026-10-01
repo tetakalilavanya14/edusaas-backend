@@ -148,6 +148,7 @@ app.use("/api/lessons", lessonsRoutes);
 
 app.use("/api/progress", progressRoutes);
 app.use("/api/certificates", certificatesRoutes);
+app.use("/api/certificate-validation", require("./src/routes/certificatevalidation.routes"));
 app.use("/api/achievements", achievementsRoutes);
 app.use("/api/tasks", tasksRoutes);
 app.use("/api/recommendations", recommendationsRoutes);
