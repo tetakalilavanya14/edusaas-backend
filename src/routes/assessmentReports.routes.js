@@ -19,11 +19,12 @@ router.post(
   try {
     const studentId = req.user.sub;
     const {
-      quiz_session_id,
-      assessment_type = "INITIAL",
-      reason,
-      additional_evidence,
-    } = req.body;
+  quiz_session_id,
+  assessment_type = "INITIAL",
+  assessment_stage,
+  reason,
+  additional_evidence,
+} = req.body;
 
     const evidence = req.file
   ? req.file.filename
@@ -31,6 +32,16 @@ router.post(
 
     const sessionId = Number(quiz_session_id);
     const assessmentType = String(assessment_type).toUpperCase();
+
+const assessmentStage = String(
+  assessment_stage || ""
+).toUpperCase();
+
+if (!assessmentStage) {
+  return res.status(400).json({
+    error: "Assessment stage is required.",
+  });
+}
 
     if (!Number.isInteger(sessionId)) {
       return res.status(400).json({
@@ -43,6 +54,25 @@ router.post(
         error: "Invalid assessment_type.",
       });
     }
+
+    if (!assessmentStage) {
+  return res.status(400).json({
+    error: "assessment_stage is required.",
+  });
+}
+
+    const validStages = {
+  INITIAL: "INITIAL_QUIZ",
+  CODING: "INITIAL_CODING",
+  FINAL: "FINAL_QUIZ",
+};
+
+
+if (validStages[assessmentType] !== assessmentStage) {
+  return res.status(400).json({
+    error: "Invalid assessment_stage for the selected assessment_type.",
+  });
+}
 
     if (!reason || !String(reason).trim()) {
       return res.status(400).json({
@@ -115,11 +145,13 @@ router.post(
     }
 
     // Prevent duplicate reports for the same assessment.
-    const existingReport =
-      await repo.assessmentReports.findByStudentAndSession(
-        studentId,
-        sessionId
-      );
+    
+     const existingReport =
+  await repo.assessmentReports.findByStudentAndSession(
+    studentId,
+    sessionId,
+    assessmentStage
+  );
 
     if (existingReport) {
       return res.status(409).json({
@@ -129,14 +161,16 @@ router.post(
     }
 
     const report = await repo.assessmentReports.create({
-      student_id: studentId,
-      quiz_session_id: sessionId,
-      reason: String(reason).trim(),
-      additional_evidence: additional_evidence
-  ? String(additional_evidence).trim()
-  : null,
-      evidence: evidence ? String(evidence).trim() : null,
-    });
+  student_id: studentId,
+  quiz_session_id: sessionId,
+  assessment_stage: assessmentStage,
+  reason: String(reason).trim(),
+  additional_evidence: additional_evidence
+    ? String(additional_evidence).trim()
+    : null,
+  evidence: evidence ? String(evidence).trim() : null,
+});
+    
 
     return res.status(201).json({
       message: "Assessment report submitted successfully.",

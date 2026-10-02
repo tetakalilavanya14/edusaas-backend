@@ -1,4 +1,4 @@
-const { PrismaClient } = require("@prisma/client");
+﻿const { PrismaClient } = require("@prisma/client");
 const crypto = require("crypto");
 
 const prisma = new PrismaClient();
@@ -2694,13 +2694,20 @@ const selectionRate =
         },
       }),
 
-    findByStudentAndSession: async (student_id, quiz_session_id) =>
-      prisma.assessmentReport.findFirst({
-        where: {
-          student_id,
-          quiz_session_id,
-        },
-      }),
+    findByStudentAndSession: async (
+  student_id,
+  quiz_session_id,
+  assessment_stage = null
+) =>
+  prisma.assessmentReport.findFirst({
+    where: {
+      student_id,
+      quiz_session_id,
+      ...(assessment_stage
+        ? { assessment_stage }
+        : {}),
+    },
+  }),
 
     findByStudent: async (student_id) =>
       prisma.assessmentReport.findMany({

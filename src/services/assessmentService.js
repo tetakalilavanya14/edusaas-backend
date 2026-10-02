@@ -32,6 +32,9 @@ function toClientQuestion(question) {
 async function startInitialAssessment(userId) {
   const user = await repo.users.findById(userId);
 
+   let approvedInitialRestart = false;
+   let approvedCodingRestart = false;
+
   if (!user) {
     const error = new Error("User not found");
     error.status = 404;
@@ -43,7 +46,7 @@ async function startInitialAssessment(userId) {
    * FIND EXISTING ASSESSMENT
    * ============================================================
    */
-  const existingSession = await repo.quizSessions.findLatestByUserAndAssessmentType(userId, "INITIAL");
+  let existingSession = await repo.quizSessions.findLatestByUserAndAssessmentType(userId, "INITIAL");
 
   // ------------------------------------------------------------
   // INITIAL QUIZ IS COMPLETED -> CHECK CODING PHASE
@@ -80,41 +83,131 @@ async function startInitialAssessment(userId) {
 };
     }
 
-    // Coding is already terminal.
+ // ------------------------------------------------------------
+// CODING ASSESSMENT WAS TERMINATED
+// ------------------------------------------------------------
+// The old quiz + coding session must remain as history.
+// Student can restart only after Admin approves the report.
+if (
+  codingSession &&
+  codingSession.status === "Terminated"
+) {
+  const report =
+    await repo.assessmentReports.findByStudentAndSession(
+      userId,
+      existingSession.session_id,
+      "INITIAL_CODING"
+    );
+
+  if (!report || report.status !== "Approved") {
+    const error = new Error(
+      report
+        ? `This coding assessment cannot be restarted until your report is approved. Current status: ${report.status}.`
+        : "This coding assessment has been terminated. Please report the issue to Admin before restarting."
+    );
+
+    error.status = 409;
+    error.code = "ASSESSMENT_TERMINATED";
+
+    throw error;
+  }
+
+  /*
+   * Admin approved the termination report.
+   *
+   * Do NOT modify the old Initial Quiz session.
+   * Do NOT modify the old Terminated Coding session.
+   *
+   * The old session remains as audit/history.
+   *
+   * Continue to the normal CREATE NEW ASSESSMENT flow below.
+   */
+}
+     // ------------------------------------------------------------
+    // CODING ASSESSMENT WAS TERMINATED
+    // ------------------------------------------------------------
+    // The old quiz + coding session must remain as history.
+    // Student can restart only after Admin approves the report.
     if (
       codingSession &&
-      (codingSession.status === "Completed" ||
-        codingSession.status === "Timed Out")
+      codingSession.status === "Terminated"
     ) {
-      return {
-        resumed: true,
-        phase: "completed",
-        session_id: existingSession.session_id,
-      };
+      const report =
+        await repo.assessmentReports.findByStudentAndSession(
+          userId,
+          existingSession.session_id,
+          "INITIAL_CODING"
+        );
+
+      if (!report || report.status !== "Approved") {
+        const error = new Error(
+          report
+            ? `This coding assessment cannot be restarted until your report is approved. Current status: ${report.status}.`
+            : "This coding assessment has been terminated. Please report the issue to Admin before restarting."
+        );
+
+        error.status = 409;
+        error.code = "ASSESSMENT_TERMINATED";
+
+        throw error;
+      }
+
+      /*
+       * Admin approved the termination report.
+       *
+       * Do NOT modify the old Initial Quiz session.
+       * Do NOT modify the old Terminated Coding session.
+       *
+       * Keep the old session as audit/history.
+       *
+       * Continue into the normal CREATE NEW ASSESSMENT flow.
+       */
+      approvedCodingRestart = true;
+      existingSession = null;
     }
 
-    // Initial quiz is complete but coding has never been started.
-    // Tell frontend to enter coding.
-   return {
-  resumed: false,
-  phase: "coding",
-  session_id: existingSession.session_id,
+    // Only continue with the old coding session if it still exists.
+    if (existingSession) {
+      // Coding is already terminal.
+      if (
+        codingSession &&
+        (codingSession.status === "Completed" ||
+          codingSession.status === "Timed Out")
+      ) {
+        return {
+          resumed: true,
+          phase: "completed",
+          session_id: existingSession.session_id,
+        };
+      }
 
-  coding_assessment: {
-    question_count: codingAssessmentService.CODING_QUESTION_COUNT,
-    format: "Practical Coding",
-  },
-};
+      // Initial quiz is complete but coding has never been started.
+      // Tell frontend to enter coding.
+      return {
+        resumed: false,
+        phase: "coding",
+        session_id: existingSession.session_id,
+
+        coding_assessment: {
+          question_count: codingAssessmentService.CODING_QUESTION_COUNT,
+          format: "Practical Coding",
+        },
+      };
+    }
   }
 
   // Prevent starting a brand-new assessment after full completion
   const profile = await repo.profiles.findByUserId(userId);
 
-  if (profile?.initial_assessment_completed === true) {
-    const error = new Error("Initial assessment already completed");
-    error.status = 409;
-    throw error;
-  }
+if (
+  profile?.initial_assessment_completed === true &&
+  !approvedInitialRestart &&
+  !approvedCodingRestart
+) {
+  const error = new Error("Initial assessment already completed");
+  error.status = 409;
+  throw error;
+}
 
   if (!user.domain_role_id) {
     const allRoles = (await repo.domainRoles.list()) || [];
@@ -161,18 +254,35 @@ async function startInitialAssessment(userId) {
       throw error;
     }
 
-    if (existingSession.status === "Terminated") {
-      const error = new Error(
-        "This assessment has been terminated and cannot be restarted."
-      );
+   if (existingSession.status === "Terminated") {
+  const report =
+    await repo.assessmentReports.findByStudentAndSession(
+      userId,
+      existingSession.session_id,
+      "INITIAL_QUIZ"
+    );
 
-      error.status = 409;
-      error.code = "ASSESSMENT_TERMINATED";
+  if (!report || report.status !== "Approved") {
+    const error = new Error(
+      report
+        ? `This assessment cannot be restarted until your report is approved. Current status: ${report.status}.`
+        : "This assessment has been terminated. Please report the issue to Admin before restarting."
+    );
 
-      throw error;
-    }
+    error.status = 409;
+    error.code = "ASSESSMENT_TERMINATED";
 
-    if (existingSession.status === "Timed Out") {
+    throw error;
+  }
+
+  // Admin approved the Initial Quiz termination report.
+  // Keep the old terminated session as history.
+  // Continue into the normal new-assessment creation flow.
+  approvedInitialRestart = true;
+  existingSession = null;
+}
+
+   if (existingSession && existingSession.status === "Timed Out") {
       const error = new Error(
         "This assessment has already expired."
       );
@@ -955,12 +1065,11 @@ async function startFinalAssessment(userId) {
    * FIND EXISTING FINAL ASSESSMENT
    * ============================================================
    */
-  const existingSession =
-    await repo.quizSessions.findActiveByUser(
-      userId,
-      "FINAL"
-    );
-
+ let existingSession =
+  await repo.quizSessions.findLatestByUserAndAssessmentType(
+    userId,
+    "FINAL"
+  );
   /*
    * ============================================================
    * RESUME EXISTING FINAL ASSESSMENT
@@ -968,6 +1077,38 @@ async function startFinalAssessment(userId) {
    */
   if (existingSession) {
     const now = new Date();
+
+    if (existingSession.status === "Terminated") {
+  const report =
+    await repo.assessmentReports.findByStudentAndSession(
+      userId,
+      existingSession.session_id,
+      "FINAL_QUIZ"
+    );
+
+  // Student cannot restart until Admin approves
+  if (!report || report.status !== "Approved") {
+    const error = new Error(
+      report
+        ? `This assessment cannot be restarted until your report is approved. Current status: ${report.status}.`
+        : "This assessment has been terminated. Please report the issue to Admin before restarting."
+    );
+
+    error.status = 409;
+    error.code = "ASSESSMENT_TERMINATED";
+
+    throw error;
+  }
+
+  /*
+   * Admin approved the report.
+   *
+   * Keep the old Terminated session as history.
+   * Setting this to null makes the function continue
+   * into the existing CREATE NEW FINAL ASSESSMENT flow.
+   */
+  existingSession = null;
+}
 
     /*
      * ----------------------------------------------------------
@@ -1831,6 +1972,15 @@ async function activateFinalAssessment(userId, sessionId) {
 }
 
 async function pauseInitialAssessment(userId, sessionId) {
+
+  console.log(
+  "[Pause Initial Assessment] Request received:",
+  {
+    userId,
+    sessionId,
+    time: new Date().toISOString(),
+  }
+);
   const quizSession =
     await repo.quizSessions.findById(sessionId);
 
@@ -2925,6 +3075,35 @@ async function getAssessmentOverview(userId) {
     repo.gapReports.findByUserId(userId),
   ]);
 
+  //Get termination report
+    const getTerminationEvent = async (sessionId) => {
+    if (!sessionId) return null;
+
+    const events = await repo.proctoringEvents.listBySessionId(sessionId);
+
+    const terminationEvents = (events || []).filter(
+      (event) =>
+        event.action === "TERMINATE_EXAM" ||
+        event.violation_type === "EXAM_TERMINATED" ||
+        event.event_type === "EXAM_TERMINATED"
+    );
+
+    const event =
+      terminationEvents[terminationEvents.length - 1];
+
+    if (!event) return null;
+
+    return {
+      violationType: event.violation_type || null,
+      action: event.action || null,
+      severity: event.severity || null,
+      message:
+        event.message ||
+        "Assessment was terminated.",
+      createdAt: event.created_at || null,
+    };
+  }; 
+
   // ------------------------------------------------------------
   // CODING ASSESSMENT
   // ------------------------------------------------------------
@@ -2938,6 +3117,22 @@ if (initialSession?.status === "Completed") {
     userId
   );
 }
+
+  const initialTerminationEvent =
+    initialSession?.status === "Terminated"
+      ? await getTerminationEvent(initialSession.session_id)
+      : null;
+
+  const codingTerminationEvent =
+    codingSession?.status === "Terminated"
+      ? await getTerminationEvent(codingSession.session_id)
+      : null;
+
+  const finalTerminationEvent =
+    finalSession?.status === "Terminated"
+      ? await getTerminationEvent(finalSession.session_id)
+      : null;
+
 
 const initialQuizCompleted = initialSession?.status === "Completed";
 const codingCompleted = codingSession?.status === "Completed";
@@ -2953,20 +3148,28 @@ if (initialQuizCompleted && codingCompleted) {
 }
 
 return {
-  initialAssessment: {
-    status: initialAssessmentStatus,
-      sessionId: initialSession?.session_id || null,
-      questionsAnswered: initialSession?.questions_answered || 0,
-      totalQuestions: initialSession?.total_questions || 0,
-      readinessScore: gapReport?.readiness_score ?? null,
-    },
+  
+   initialAssessment: {
+  status: initialAssessmentStatus,
+initialQuizStatus: initialSession?.status || "Not Started",
+  sessionId: initialSession?.session_id || null,
+  questionsAnswered: initialSession?.questions_answered || 0,
+  totalQuestions: initialSession?.total_questions || 0,
+  readinessScore:
+  initialQuizCompleted && codingCompleted
+    ? gapReport?.readiness_score ?? null
+    : null,
+  termination: initialTerminationEvent,
+},
 
     codingAssessment: {
-      status: codingSession?.status || "Not Started",
-      sessionId: codingSession?.session_id || null,
-      remainingSeconds:
-        Number(codingSession?.remaining_seconds || 0),
-    },
+  status: codingSession?.status || "Not Started",
+  sessionId: codingSession?.session_id || null,
+  remainingSeconds:
+    Number(codingSession?.remaining_seconds || 0),
+  termination: codingTerminationEvent,
+},
+
 
     finalAssessment: {
       finalQuiz: {
@@ -2974,6 +3177,7 @@ return {
         sessionId: finalSession?.session_id || null,
         questionsAnswered: finalSession?.questions_answered || 0,
         totalQuestions: finalSession?.total_questions || 0,
+        termination: finalTerminationEvent,
       },
 
       miniProject: {

@@ -764,6 +764,7 @@ model AssessmentReport {
   id                  Int       @id @default(autoincrement())
   student_id          String    @db.Uuid
   quiz_session_id     Int
+  assessment_stage    String?   @db.VarChar(50)
   reason              String
   evidence            String?
   additional_evidence String?

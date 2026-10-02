@@ -621,6 +621,7 @@ console.log(
   students.map((s) => ({
     id: s.id,
     name: s.name,
+     username: s.username,
     email: s.email,
     domain_role_id: s.domain_role_id,
   }))

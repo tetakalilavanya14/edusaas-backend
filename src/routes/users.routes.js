@@ -111,10 +111,12 @@ router.post("/sync", async (req, res, next) => {
       });
     }
 
-    const name =
-      `${clerkUser.firstName || ""} ${
-        clerkUser.lastName || ""
-      }`.trim() || "User";
+  const name =
+  `${clerkUser.firstName || ""} ${
+    clerkUser.lastName || ""
+  }`.trim() ||
+  clerkUser.username ||
+  "User";
 
     const username = clerkUser.username || null;
 

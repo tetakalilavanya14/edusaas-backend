@@ -67,7 +67,7 @@ async function validateProctoringStart(message) {
   }
 
   const sessionId = Number(session_id);
-  const assessmentype = String (message.assessment_type || "QUIZ").toUpperCase();
+ 
 
   if (!Number.isInteger(sessionId)) {
     const error = new Error(
@@ -192,15 +192,7 @@ async function persistProctoringEvent(
   }
 
   try {
-    if (assessmentType === "CODING") {
-      console.log("[proctoring] Coding proctoring event:", {
-        session_id: sessionId,
-        violation_type: fraud.violation_type,
-        action: fraud.action,
-      });
-      return { session_id: sessionId, ...fraud };
-    }
-
+    
     const event = await repo.proctoringEvents.create({
       session_id: sessionId,
 

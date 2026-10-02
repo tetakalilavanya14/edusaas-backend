@@ -558,6 +558,15 @@ async function runStudentCode({
     throw error;
   }
 
+  if (codingSession.status === "Terminated") {
+  const error = new Error(
+    "Coding assessment has been terminated. Please report the issue to Admin before continuing."
+  );
+  error.status = 409;
+  error.code = "ASSESSMENT_TERMINATED";
+  throw error;
+}
+
   if (codingSession.status === "Timed Out") {
     const error = new Error(
       "Coding assessment time has expired"
@@ -1598,6 +1607,7 @@ async function activateAssessment({ userId, sessionId }) {
     error.status = 409;
     throw error;
   }
+  
 
   if (codingSession.status === "Timed Out") {
     const error = new Error(
@@ -1606,6 +1616,15 @@ async function activateAssessment({ userId, sessionId }) {
     error.status = 409;
     throw error;
   }
+
+  if (codingSession.status === "Terminated") {
+  const error = new Error(
+    "Coding assessment has been terminated. Please report the issue to Admin before continuing."
+  );
+  error.status = 409;
+  error.code = "ASSESSMENT_TERMINATED";
+  throw error;
+}
 
   if (codingSession.status === "In Progress") {
     const remainingSeconds = Math.max(
