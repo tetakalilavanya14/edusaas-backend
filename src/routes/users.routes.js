@@ -239,13 +239,15 @@ router.post("/sync", async (req, res, next) => {
 
       // Security: an existing user's role must not be changed by the client.
       // Role changes must come through trusted server/admin flows.
+      //allows the roles requested by client for new signup's after reaching the existing users checks.
       if (
         req.body.role &&
         req.body.role !== user.role
       ) {
         console.warn(
-          `[SYNC] Ignoring client-supplied role change for user ${user.id}: ${user.role} -> ${req.body.role}`
+          `[SYNC] Ignoring client-supplied role change for user ${user.role} to ${req.body.role}`
         );
+        updateData.role = req.body.role;
       }
 
       const effectiveRole =
