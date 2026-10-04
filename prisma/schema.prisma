@@ -930,6 +930,7 @@ model community_posts {
   post_type           community_post_type
   status              community_post_status @default(Published)
   visibility          community_visibility  @default(Public)
+  community           String                @default("student") @db.VarChar(20)
   media_url           String?
   metadata            Json?
   comments_count      Int                   @default(0)
@@ -949,6 +950,7 @@ model community_posts {
   @@index([post_type], map: "idx_community_posts_post_type")
   @@index([status], map: "idx_community_posts_status")
   @@index([visibility], map: "idx_community_posts_visibility")
+  @@index([community], map: "idx_community_posts_community")
   @@schema("education")
 }
 

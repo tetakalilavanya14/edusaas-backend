@@ -3264,7 +3264,20 @@ const selectionRate =
       );
     },
 
-    async toggleBookmark(user_id, post_id) {
+    async toggleBookmark(user_id, post_id, community) {
+      const post = await prisma.community_posts.findUnique({
+        where: { id: post_id },
+        select: { id: true, community: true },
+      });
+
+      if (!post) {
+        throw new Error("Community post not found.");
+      }
+
+      if (community && post.community !== community) {
+        throw new Error("You are not allowed to bookmark this community post.");
+      }
+
       const existing = await prisma.community_bookmarks.findFirst({
         where: { user_id, post_id },
       });
@@ -3290,12 +3303,17 @@ const selectionRate =
       author_id,
       user_role,
       current_user_id,
+      community,
     } = {}) {
 
       const where = {
         deleted_at: null,
         status: "Published",
       };
+
+      if (community) {
+        where.community = community;
+      }
 
       if (post_type) {
         where.post_type = post_type;
@@ -5534,4 +5552,3 @@ return {
   },
 
 };
-
