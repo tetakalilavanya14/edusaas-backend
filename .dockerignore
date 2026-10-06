@@ -1,8 +1,12 @@
 node_modules
 npm-debug.log
+
 .git
 .github
+
 .env
+.env.*
+
 Dockerfile
 .dockerignore
 README.md
