@@ -410,6 +410,7 @@ function sanitizeUser(user) {
     id: user.id,
     clerk_id: user.clerk_id,
     name: user.name,
+    username: user.username,
     email: user.email,
     role: user.role,
     status: user.status,
@@ -1144,3 +1145,4 @@ router.get(
 );
 
 module.exports = router;
+
