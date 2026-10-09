@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const { jwtSecret } = require("../config/env");
+const { ROLE_PERMISSIONS } = require("../config/rbac");
 
 function authRequired(req, res, next) {
   const header = req.headers.authorization || "";
@@ -32,7 +33,8 @@ function permissionRequired(...requiredPerms) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: "Unauthenticated" });
     if (req.user.role === "admin") return next();
-    const have = new Set(req.user.permissions || []);
+    const defaultPerms = ROLE_PERMISSIONS[req.user.role] || [];
+    const have = new Set([...(req.user.permissions || []), ...defaultPerms]);
     const missing = requiredPerms.filter((p) => !have.has(p));
     if (missing.length > 0) {
       return res.status(403).json({
