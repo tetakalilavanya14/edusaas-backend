@@ -5,7 +5,9 @@
 const express = require("express");
 const router = express.Router();
 const { authRequired } = require("../middleware/auth");
+const { aimlServiceUrl } = require("../config/env");
 const {
+  callAIML,
   analyzeSentiment,
   analyzeToxicity,
   predictFraud,
@@ -35,6 +37,32 @@ function roleGuard(...allowedRoles) {
     });
   };
 }
+
+// ─────────────────────────────────────────────────────────────
+// 0. Deployed ML Service Health & Gateway Status
+// GET /api/aiml/health
+// ─────────────────────────────────────────────────────────────
+router.get("/health", async (req, res) => {
+  const startedAt = Date.now();
+  try {
+    const data = await callAIML("/health", null, "GET");
+    return res.json({
+      success: true,
+      service: "deployed-aiml",
+      url: aimlServiceUrl,
+      responseTimeMs: Date.now() - startedAt,
+      data,
+    });
+  } catch (err) {
+    return res.status(503).json({
+      success: false,
+      service: "deployed-aiml",
+      url: aimlServiceUrl,
+      responseTimeMs: Date.now() - startedAt,
+      message: err.message,
+    });
+  }
+});
 
 // ─────────────────────────────────────────────────────────────
 // 1. Sentiment Analysis

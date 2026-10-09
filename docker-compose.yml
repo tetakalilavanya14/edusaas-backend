@@ -1,12 +1,9 @@
 # ==============================================================================
-# OPTIONAL: Containerized Deployment Reference
+# Containerized Deployment Reference
 # ==============================================================================
-# NOTE: Running the API and Worker inside Docker containers is OPTIONAL.
-# The primary architecture runs the API (server.js) and Worker (worker.js)
-# directly on the Node.js runtime with Git as the single source of truth.
-#
-# Docker is REQUIRED ONLY on the host machine to execute untrusted student
-# code in coding assessments (dockerService.js).
+# Docker socket is mounted so coding assessments (dockerService.js) can run
+# sandboxed student code inside runner containers.
+# Persistent volumes preserve uploads and assessment evidence across restarts.
 # ==============================================================================
 
 services:
@@ -18,10 +15,21 @@ services:
     ports:
       - "5000:5000"
     env_file:
-      - .env.docker
+      - .env
     environment:
-      APP_ENV: stage
+      APP_ENV: production
+      NODE_ENV: production
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./uploads:/app/uploads
+      - ./assessment-evidence:/app/assessment-evidence
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   worker:
     build:
@@ -29,8 +37,12 @@ services:
       dockerfile: Dockerfile
     container_name: vayvora-worker
     env_file:
-      - .env.docker
+      - .env
     environment:
-      APP_ENV: stage
+      APP_ENV: production
+      NODE_ENV: production
+    volumes:
+      - ./uploads:/app/uploads
+      - ./assessment-evidence:/app/assessment-evidence
     command: ["node", "worker.js"]
     restart: unless-stopped

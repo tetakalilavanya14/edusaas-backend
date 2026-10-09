@@ -10,33 +10,51 @@
 // Either set FLASK_QUIZ_URL=http://127.0.0.1:5001 in your .env, or change
 // app.run(port=5001) on the Python side — just make sure they match.
 
-const { flaskQuizUrl } = require("../config/env");
+const { flaskQuizUrl, aimlTimeoutMs } = require("../config/env");
 
 async function callFlask(endpoint, payload) {
-  const response = await fetch(`${flaskQuizUrl}${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  const controller = new AbortController();
+  const timeoutLimit = aimlTimeoutMs || 45000;
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, timeoutLimit);
 
-  let data;
   try {
-    data = await response.json();
+    const response = await fetch(`${flaskQuizUrl}${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (err) {
+      const error = new Error("AI service returned a non-JSON response");
+      error.status = 502;
+      throw error;
+    }
+
+    if (!response.ok || data.success === false) {
+      const error = new Error(data.message || "AI service failed");
+      error.status = response.status >= 400 ? response.status : 502;
+      throw error;
+    }
+
+    return data;
   } catch (err) {
-    const error = new Error("AI service returned a non-JSON response");
-    error.status = 502;
-    throw error;
+    if (err.name === "AbortError") {
+      const error = new Error(`AI service did not respond within ${timeoutLimit}ms`);
+      error.status = 504;
+      throw error;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  if (!response.ok || data.success === false) {
-    const error = new Error(data.message || "AI service failed");
-    error.status = response.status >= 400 ? response.status : 502;
-    throw error;
-  }
-
-  return data;
 }
 
 // ---------------------------------------------------------------------

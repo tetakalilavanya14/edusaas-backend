@@ -54,4 +54,5 @@ module.exports = {
   fraudAiWsUrl: rawFraudWs,
   plagiarismBaseUrl: rawAimlUrl,
   flaskQuizUrl: rawAimlUrl,
+  aimlTimeoutMs: parseInt(process.env.AIML_TIMEOUT_MS, 10) || 45000,
 };

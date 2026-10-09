@@ -49,7 +49,7 @@ COPY --from=build /app/server.js ./server.js
 COPY --from=build /app/worker.js ./worker.js
 
 # Runtime directories
-RUN mkdir -p uploads \
+RUN mkdir -p uploads/avatars uploads/resumes assessment-evidence \
     && chown -R node:node /app
 
 USER node

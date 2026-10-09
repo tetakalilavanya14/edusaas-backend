@@ -52,9 +52,26 @@ const corsOrigins = (process.env.CORS_ORIGINS || "")
 
 app.use(
   cors({
-    origin: corsOrigins,
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (corsOrigins.includes("*") || corsOrigins.length === 0) {
+        return callback(null, true);
+      }
+      if (corsOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      // Allow local development and container host origins
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   })
 );
+
 // Mount webhooks route BEFORE express.json() so it can use express.raw()
 app.use("/api/webhooks", require("./src/routes/webhooks.routes"));
 
@@ -73,6 +90,11 @@ app.get("/", (req, res) => {
     status: "ok",
     docs: "/api-docs",
   });
+});
+
+// Lightweight container / ALB liveness probe
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "healthy", service: "edu-saas-api" });
 });
 
 

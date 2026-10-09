@@ -1,6 +1,4 @@
-// src/services/aimlClient.js
-
-const { aimlServiceUrl } = require("../config/env");
+const { aimlServiceUrl, aimlTimeoutMs } = require("../config/env");
 const crypto = require("crypto");
 
 /**
@@ -39,15 +37,17 @@ async function callAIML(
   endpoint,
   payload = null,
   method = "POST",
-  customBaseUrl = null
+  customBaseUrl = null,
+  customTimeoutMs = null
 ) {
   const controller = new AbortController();
+  const timeoutDuration = customTimeoutMs || aimlTimeoutMs || 45000;
 
   // Prevent a slow/unavailable AIML service from blocking
   // the main application request indefinitely.
   const timeout = setTimeout(() => {
     controller.abort();
-  }, 5000);
+  }, timeoutDuration);
 
   const options = {
     method,
@@ -91,7 +91,7 @@ async function callAIML(
   } catch (error) {
     if (error.name === "AbortError") {
       console.error(
-        `[AIML Client Timeout] ${endpoint}: AI service did not respond within 5 seconds`
+        `[AIML Client Timeout] ${endpoint}: AI service did not respond within ${timeoutDuration}ms`
       );
     } else {
       console.error(
