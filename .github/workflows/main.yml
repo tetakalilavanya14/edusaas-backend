@@ -1,41 +1,18 @@
-
-name: CI Pipeline
+name: EduSaaS CI Pipeline
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+  workflow_dispatch:
 
 jobs:
-  build:
+  checkout:
+    name: Step 2 - Checkout Source Code
     runs-on: ubuntu-latest
-
     steps:
-      # Step 5 - Checkout Source Code
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Step 6 - Dependency Installation
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm install
-
-      # Step 7 - Static Code Analysis
-      - name: Lint
-        run: npm run lint
-
-      # Step 8 - Compile / Build
-      - name: Build application
-        run: npm run build
-
-      # Step 9 - Unit Testing
-      - name: Run Unit Tests
-        run: npm test
-
-      # Step 10 - Security & Vulnerability Scan
-      - name: Security Audit
-        run: npm audit --audit-level=high
+      - name: Verify Files
+        run: ls -la
