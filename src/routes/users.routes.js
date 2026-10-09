@@ -193,6 +193,19 @@ router.post("/sync", async (req, res, next) => {
       const password_hash =
         await bcrypt.hash(dummyPassword, 10);
 
+      let finalDomainId = null;
+      if (role === "student") {
+        if (domainRoleId) {
+          const found = await repo.domainRoles.findById(domainRoleId);
+          if (found) finalDomainId = found.domain_role_id || found.id;
+        }
+        if (!finalDomainId) {
+          const allRoles = (await repo.domainRoles.list()) || [];
+          const aiRole = allRoles.find((r) => r.domain_name === "AI Engineer") || allRoles[0];
+          if (aiRole) finalDomainId = aiRole.domain_role_id || aiRole.id;
+        }
+      }
+
       try {
         user = await repo.users.create({
           name,
@@ -201,8 +214,7 @@ router.post("/sync", async (req, res, next) => {
           email,
           role,
           password_hash,
-          domain_role_id:
-            role === "student" ? domainRoleId : null,
+          domain_role_id: finalDomainId,
         });
 
         console.log(
@@ -262,30 +274,29 @@ router.post("/sync", async (req, res, next) => {
         null;
 
       if (effectiveRole === "student") {
-        if (
-          targetDomain &&
-          targetDomain !== user.domain_role_id
-        ) {
+        let validTargetDomain = null;
+        if (targetDomain) {
+          const found = await repo.domainRoles.findById(targetDomain);
+          if (found) validTargetDomain = found.domain_role_id || found.id;
+        }
+
+        const userDomainValid = user.domain_role_id
+          ? await repo.domainRoles.findById(user.domain_role_id)
+          : null;
+
+        if (validTargetDomain && validTargetDomain !== user.domain_role_id) {
           console.log(
-            `[SYNC] Updating student domain_role_id from ${user.domain_role_id} to ${targetDomain}`
+            `[SYNC] Updating student domain_role_id from ${user.domain_role_id} to ${validTargetDomain}`
           );
-
-          updateData.domain_role_id = targetDomain;
-        } else if (!user.domain_role_id) {
-          const allRoles =
-            (await repo.domainRoles.list()) || [];
-
-          const aiRole = allRoles.find(
-            (r) => r.domain_name === "AI Engineer"
-          );
-
+          updateData.domain_role_id = validTargetDomain;
+        } else if (!userDomainValid) {
+          const allRoles = (await repo.domainRoles.list()) || [];
+          const aiRole = allRoles.find((r) => r.domain_name === "AI Engineer") || allRoles[0];
           if (aiRole) {
             console.log(
-              `[SYNC] Student missing domain_role_id; assigning default ${aiRole.domain_name}`
+              `[SYNC] Student missing or invalid domain_role_id; assigning default ${aiRole.domain_name}`
             );
-
-            updateData.domain_role_id =
-              aiRole.domain_role_id || aiRole.id;
+            updateData.domain_role_id = aiRole.domain_role_id || aiRole.id;
           }
         }
       }
